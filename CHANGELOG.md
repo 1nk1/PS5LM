@@ -7,6 +7,27 @@ v0.1.x are the upstream payload releases by cobanov.
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-10-13
+
+### Fixed
+- The chat server stopped answering after the network dropped: when the
+  console's link went down, accept() failed with `SCE_NET_EINACTIVEDISABLED`
+  (errno 163, the same `0x804101a3` a dropped download reported), cpp-httplib
+  took that as fatal and closed the listening socket, and the model stayed
+  loaded with nothing to reach it. llama-server now binds again once a second
+  until it works (`patches/0005-listener-survives-network-drops.patch`).
+  Checked on the console: the listener came back within a second after each
+  of dozens of drops. A reply streaming at the moment of a drop is still cut.
+
+### Added
+- README: the web UI with a sample chat.
+
+### Found
+- The repeated "Ethernet disconnected" notifications are the console's link
+  going down and up (`eth0: link state changed to DOWN` in the kernel log,
+  up to eight times in a few seconds), with or without PS5LM running: a cable,
+  port or switch problem, not the app.
+
 ## [0.8.0] - 2026-10-13
 
 ### Added
