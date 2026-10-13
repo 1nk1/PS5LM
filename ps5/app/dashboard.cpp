@@ -1149,8 +1149,9 @@ void Dashboard::draw_header(gfx::DrawList & list) const {
     const float in = tween::stagger(age_, 0, 0.05f, 0.5f);
     list.push_opacity(in);
     const float y = 124 - 10.0f * (1.0f - in);
-    const float w = ui::text(list, fonts_.display, "PS5LM", kGridX - 3, y, 56, kInk);
-    std::string sub = "v" PS5LM_VERSION "  \xC2\xB7  Chat at " + live_.address;
+    float       w = ui::text(list, fonts_.display, "PS5LM", kGridX - 3, y, 56, kInk);
+    w += ui::text(list, fonts_.display, " Plus", kGridX - 3 + w, y, 56, kBrand);
+    std::string sub = "v" PS5LM_VERSION "  \xC2\xB7  " + live_.address;
     ui::text(list, fonts_.regular, sub, kGridX + w + 24, y, 24, kInk.with_alpha(kMuted));
 
     const char * word  = state_word(live_.state);
@@ -1381,7 +1382,7 @@ void Dashboard::draw_usage_details(gfx::DrawList & list, const Rect & panel) con
     const bool serving = L.state == ServerState::ready || L.state == ServerState::generating;
     char text[96];
     caps(list, f, "USAGE", panel.x + 56, panel.y + 60, 20, kCyan);
-    ui::text(list, f.regular, "What the console is doing for PS5LM, over the last two minutes.", panel.x + 56,
+    ui::text(list, f.regular, "What the console is doing for PS5LM Plus, over the last two minutes.", panel.x + 56,
              panel.y + 96, 20, kInk.with_alpha(kMuted));
 
     const float x0 = panel.x + 56, colw = (panel.w - 112 - 48) * 0.5f, x1 = x0 + colw + 48;

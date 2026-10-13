@@ -508,7 +508,7 @@ struct Models {
         pthread_attr_setstacksize(&attr, 16u << 20);  // the console's default stack is small
         pthread_create(&server, &attr, run_server, nullptr);
         server_started = true;
-        notify("PS5LM: loading the model onto the GPU");
+        notify("PS5LM Plus: loading the model onto the GPU");
     }
 
     void stop() {
@@ -637,7 +637,7 @@ int main(int, char **) {
     } else {
         stats.set_state(ServerState::no_model);
         if (models.rows.empty()) {
-            notify("PS5LM: no models; copy a .gguf to /data/PS5LM/models or PS5LM/models on a USB drive");
+            notify("PS5LM Plus: no models; copy a .gguf to /data/PS5LM/models or PS5LM/models on a USB drive");
         }
     }
 
@@ -686,11 +686,11 @@ int main(int, char **) {
         Live live = stats.snapshot();
         if (g_server_rc >= 0 && live.state != ServerState::failed && live.state != ServerState::no_model) {
             stats.set_state(ServerState::failed);
-            notify("PS5LM: the server stopped, see /data/PS5LM/llama.log");
+            notify("PS5LM Plus: the server stopped, see /data/PS5LM/llama.log");
         }
         const bool serving = live.state == ServerState::ready || live.state == ServerState::generating;
         if (serving && !was_serving) {
-            notify("PS5LM: ready, chat in a browser on this network");
+            notify("PS5LM Plus: ready, chat in a browser on this network");
         }
         was_serving = serving;
         if (n % 30 == 0) {
@@ -755,7 +755,7 @@ int main(int, char **) {
             const bool over = gib > models.settings.scratch_limit_gib;
             if (over && !scratch_warned) {
                 char text[128];
-                std::snprintf(text, sizeof(text), "PS5LM: the chat's scratch folder holds %.1f GiB; clear it in Settings", gib);
+                std::snprintf(text, sizeof(text), "PS5LM Plus: the chat's scratch folder holds %.1f GiB; clear it in Settings", gib);
                 notify(text);
                 std::printf("ps5lm-app: %s\n", text + 7);
             }
@@ -767,7 +767,7 @@ int main(int, char **) {
             if (mv.saved != saved_seen) {
                 saved_seen = mv.saved;
                 models.rescan(stats, false);
-                notify(("PS5LM: " + mv.note).c_str());
+                notify(("PS5LM Plus: " + mv.note).c_str());
             }
             dash.set_market(std::move(mv));
         }
@@ -842,7 +842,7 @@ int main(int, char **) {
                 std::filesystem::remove_all(e.path(), ec);
             }
             stats.set_scratch(folder_bytes(kScratch) / 1073741824.0);
-            notify("PS5LM: scratch folder cleared");
+            notify("PS5LM Plus: scratch folder cleared");
             std::printf("ps5lm-app: scratch folder cleared\n");
         }
         // The same requests from the PC (scripts/ps5lm-app.sh load|unload).

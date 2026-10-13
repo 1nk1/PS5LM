@@ -41,7 +41,7 @@ struct ModelRow {
 
 struct Live {
     ServerState state = ServerState::loading;
-    std::string address;     // "http://192.168.1.19:8081"
+    std::string address;     // "192.168.1.19:8081"
 
     // The model that runs.
     std::string model_label;
