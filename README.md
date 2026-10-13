@@ -54,6 +54,11 @@ For comparison, the 27B on the CPU as a payload, streamed from disk, made about 
 
 **On your network**
 
+<p align="center">
+  <img src="docs/media/app/webui-chat.jpg" width="820" alt="llama.cpp's web UI served by the PS5, answering with Llama 3.2 3B">
+  <br><sub>The chat in a PC's browser, served by the PS5: Llama 3.2 3B on the console's GPU at 105 tok/s, explaining that a games console cannot run a chatbot on its own.</sub>
+</p>
+
 - **Chat:** llama.cpp's web UI at `http://<console IP>:8081`, with file tools and, for vision models such as Gemma 4, images (put the model's `mmproj` file beside it).
 - **API:** OpenAI Chat Completions and Responses, and Anthropic Messages, on the same port. opencode, codex, Claude Code and aider work against it: see [docs/CLI.md](docs/CLI.md).
 
