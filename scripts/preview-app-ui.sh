@@ -25,7 +25,9 @@ sources+=("$kit/host/platform_host.cpp" "$root/ps5/app/dashboard.cpp" "$root/ps5
 compile() {
     local src=$1 o
     o="$obj/$(echo "${src#"$root/"}" | tr '/' '_').o"
-    if [ ! -f "$o" ] || [ "$src" -nt "$o" ] || [ "$root/ps5/app/dashboard.hpp" -nt "$o" ] || [ "$root/ps5/app/stats.hpp" -nt "$o" ]; then
+    # Any app header newer than the object rebuilds it: a struct changed in
+    # one header and not rebuilt everywhere crashes the preview.
+    if [ ! -f "$o" ] || [ "$src" -nt "$o" ] || [ -n "$(find "$root/ps5/app" -name '*.hpp' -newer "$o" -print -quit)" ]; then
         if [[ $src == *.c ]]; then
             $cc -std=c11 -O2 -w -I"$kit/src" -c "$src" -o "$o"
         else

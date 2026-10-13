@@ -103,7 +103,6 @@ constexpr const char * kChoice      = "/data/PS5LM/model.txt";
 constexpr const char * kQuit        = "/data/PS5LM/quit";
 constexpr const char * kSettings    = "/data/PS5LM/settings.json";
 constexpr const char * kScratch     = "/data/PS5LM/scratch";
-constexpr const char * kPendingDownload = "/data/PS5LM/download.txt";  // a download to start after a restart
 // The file tools only: a title cannot start processes (no shell command).
 constexpr const char * kTools       = "read_file,write_file,edit_file,file_glob_search,grep_search,get_info";
 constexpr const char * kLlamaLog    = "/data/PS5LM/llama.log";
@@ -380,7 +379,54 @@ struct Models {
     const char * kv_force() const { return settings.kv_type == "auto" ? nullptr : settings.kv_type.c_str(); }
 
     void scan(StatsCollector & stats) {
-        rows.clear();
+        rows = plan_rows(settings, budget_gib, running);
+        publish(stats);
+    }
+
+    // scan() on its own thread, for a settings change: the dashboard shows it
+    // working instead of freezing while every header is read.
+    std::mutex             scan_mutex;
+    std::vector<ModelRow>  scanned;
+    std::atomic<int>       scan_state{ 0 };  // 0 idle, 1 running, 2 done
+    bool                   scan_again = false;
+    bool                   scan_shown = true;  // the dashboard says it is working
+
+    void rescan(StatsCollector & stats, bool shown = true) {
+        scan_shown = shown;
+        if (scan_state != 0) {
+            scan_again = true;  // the running one read the old settings
+            return;
+        }
+        scan_state = 1;
+        std::thread([this, s = settings, b = budget_gib, r = running] {
+            std::vector<ModelRow> out = plan_rows(s, b, r);
+            std::lock_guard<std::mutex> lock(scan_mutex);
+            scanned = std::move(out);
+            scan_state = 2;
+        }).detach();
+        (void) stats;
+    }
+
+    // Takes a finished rescan; true while one is still running.
+    bool poll_rescan(StatsCollector & stats) {
+        if (scan_state == 2) {
+            {
+                std::lock_guard<std::mutex> lock(scan_mutex);
+                rows = std::move(scanned);
+            }
+            scan_state = 0;
+            publish(stats);
+            if (scan_again) {
+                scan_again = false;
+                rescan(stats);
+            }
+        }
+        return scan_state != 0;
+    }
+
+    static std::vector<ModelRow> plan_rows(const Settings & settings, double budget_gib, const std::string & running) {
+        std::vector<ModelRow> rows;
+        const char * kv = settings.kv_type == "auto" ? nullptr : settings.kv_type.c_str();
         for (const auto & path : find_models(kModelDirs)) {
             const ModelInfo m = read_model_info(path);
             ModelRow row;
@@ -392,7 +438,7 @@ struct Models {
                 rows.push_back(row);
                 continue;
             }
-            const Plan p = plan_model(m, budget_gib, settings.ctx_cap, kv_force());
+            const Plan p = plan_model(m, budget_gib, settings.ctx_cap, kv);
             const Preset * pre = find_preset(m);
             row.arch = m.arch;
             row.plan = p.why;
@@ -403,7 +449,7 @@ struct Models {
             rows.push_back(row);
             std::printf("ps5lm-app: model %s (%s): %s\n", m.file_name.c_str(), m.arch.c_str(), p.why.c_str());
         }
-        publish(stats);
+        return rows;
     }
 
     void publish(StatsCollector & stats) {
@@ -608,24 +654,28 @@ int main(int, char **) {
     Dashboard dash(fonts);
     Market    market;
     market.start(models.budget_gib);
-    std::string last_download;
+    int  saved_seen = 0;  // downloads finished, as last seen
     dash.set_settings(models.settings);
     bool      library_shown = false;  // opened once at launch when no model is loaded
     bool      scratch_warned = false;
-    // A download asked for with "unload and download" before the restart.
-    if (const auto pending = read_lines(kPendingDownload); pending.size() >= 5) {
-        unlink(kPendingDownload);
-        MarketJob job{ pending[0], pending[1], pending[2] == "-" ? "" : pending[2], pending[4], std::strtoull(pending[3].c_str(), nullptr, 10) };
-        market.download(job, free_gib(job.dir));
-        dash.show_page(Dashboard::kMarketPage);
-        library_shown = true;  // stay on Get models, not the library
-        std::printf("ps5lm-app: downloading %s/%s after the restart\n", job.repo.c_str(), job.file.c_str());
+    // Downloads left queued or running carry on, on their own page.
+    unlink("/data/PS5LM/download.txt");  // the queue file replaced this one (v0.7.0)
+    market.load_queue();
+    for (const auto & d : market.snapshot().downloads) {
+        // Running already, maybe: the queue's thread starts it at once.
+        if (d.state == DownloadState::queued || d.state == DownloadState::running) {
+            dash.show_page(Dashboard::kDownloadsPage);
+            library_shown = true;  // stay on Downloads, not the library
+            break;
+        }
     }
     DashboardFrame frame;
     hui::ui::Feedback feedback;
     hui::PadSample samples[64];
     int64_t last = hui::sys::monotonic_us();
     bool was_serving = false;
+    bool rescanning = false;
+    uint64_t restart_at = 0;  // the frame to stop the model and restart on, or 0
     for (uint64_t n = 0;; ++n) {
         const int64_t now = hui::sys::monotonic_us();
         const float dt = n == 0 ? 1.0f / 60.0f : std::min(0.05f, (float) (now - last) / 1e6f);
@@ -711,15 +761,13 @@ int main(int, char **) {
             }
             scratch_warned = over;
         }
-        if (dash.page() == Dashboard::kMarketPage && n % 10 == 0) {
+        if (n % 10 == 0) {
             MarketView mv = market.snapshot();
             // A finished download joins the library.
-            if (!mv.download_result.empty() && mv.download_result != last_download) {
-                last_download = mv.download_result;
-                if (mv.download_result.rfind("Saved", 0) == 0) {
-                    models.scan(stats);
-                    notify(("PS5LM: " + mv.download_result).c_str());
-                }
+            if (mv.saved != saved_seen) {
+                saved_seen = mv.saved;
+                models.rescan(stats, false);
+                notify(("PS5LM: " + mv.note).c_str());
             }
             dash.set_market(std::move(mv));
         }
@@ -727,13 +775,36 @@ int main(int, char **) {
             dash.set_logs(tail_lines(kLog), tail_lines(kLlamaLog));
         }
 
+        // A settings rescan in the background: say so until it lands.
+        if (models.poll_rescan(stats) && models.scan_shown) {
+            char text[96];
+            std::snprintf(text, sizeof(text), "Planning every model again for %uk tokens and the %s cache",
+                          models.settings.ctx_cap / 1024, models.settings.kv_type.c_str());
+            dash.set_busy("Applying the new limits", text);
+            rescanning = true;
+        } else if (rescanning) {
+            rescanning = false;
+            dash.set_busy("");
+        }
+        // A restart asked for a few frames ago, once the busy screen is up.
+        if (restart_at != 0 && n >= restart_at) {
+            std::fflush(nullptr);
+            models.stop();
+            sceSystemServiceLoadExec("/app0/eboot.bin", nullptr);
+        }
+
         Dashboard::Request req = dash.take_request();
         if (req.kind == Dashboard::Request::settings) {
             // The planner's limits change every row's plan; the loaded model
             // keeps its settings until it is loaded again.
+            // Only the context and cache limits change the plans; rescanning
+            // reads every model's header, seconds with a USB drive.
+            const Settings was = models.settings;
             models.settings = dash.settings();
             save_settings(kSettings, models.settings);
-            models.scan(stats);
+            if (was.ctx_cap != models.settings.ctx_cap || was.kv_type != models.settings.kv_type) {
+                models.rescan(stats);
+            }
             std::printf("ps5lm-app: settings saved\n");
         }
         switch (req.kind) {
@@ -743,23 +814,23 @@ int main(int, char **) {
             case Dashboard::Request::market_download: {
                 MarketJob job;
                 if (market.job(req.repo, req.file, req.path.empty() ? models.settings.download_dir : req.path, &job)) {
-                    market.download(job, free_gib(job.dir));
+                    market.enqueue(job, free_gib(job.dir));
                 }
                 break;
             }
+            case Dashboard::Request::download_pause: market.pause(req.repo); break;
+            case Dashboard::Request::download_resume: market.resume(req.repo); break;
+            case Dashboard::Request::download_remove: market.remove(req.repo); break;
             case Dashboard::Request::market_download_unload: {
-                // Unload by restarting (as the library does), leaving the
-                // download for the new process to start.
+                // Unload by restarting (as the library does); the queue,
+                // saved to disk, starts the download in the new process.
                 MarketJob job;
-                if (market.job(req.repo, req.file, req.path.empty() ? models.settings.download_dir : req.path, &job)) {
-                    std::ofstream(kPendingDownload) << job.repo << "\n" << job.file << "\n" << (job.sha256.empty() ? "-" : job.sha256) << "\n"
-                                                    << job.bytes << "\n" << job.dir << "\n";
+                if (market.job(req.repo, req.file, req.path.empty() ? models.settings.download_dir : req.path, &job) &&
+                    market.enqueue(job, free_gib(job.dir))) {
                     std::ofstream(kChoice) << "none\n";
-                    notify("PS5LM: unloading the model, then downloading");
                     std::printf("ps5lm-app: restarting to download %s/%s without a model\n", job.repo.c_str(), job.file.c_str());
-                    std::fflush(nullptr);
-                    models.stop();
-                    sceSystemServiceLoadExec("/app0/eboot.bin", nullptr);
+                    dash.set_busy("Unloading " + base_name(models.running), "The app restarts without it, then the download starts");
+                    restart_at = n + 3;
                 }
                 break;
             }
@@ -798,11 +869,16 @@ int main(int, char **) {
             if (req.kind == Dashboard::Request::load) {
                 unlink(kArgs);  // the library's choice replaces a manual override
             }
-            notify(req.kind == Dashboard::Request::load ? "PS5LM: loading the new model" : "PS5LM: model unloaded");
             std::printf("ps5lm-app: restarting for %s\n", req.kind == Dashboard::Request::load ? req.path.c_str() : "no model");
-            std::fflush(nullptr);
-            models.stop();
-            sceSystemServiceLoadExec("/app0/eboot.bin", nullptr);
+            const bool loaded = !models.running.empty();
+            if (req.kind == Dashboard::Request::load) {
+                dash.set_busy(loaded ? "Switching models" : "Loading " + base_name(req.path),
+                              loaded ? "Unloading " + base_name(models.running) + ", then the app restarts with " + base_name(req.path)
+                                     : "The app restarts to give the model the whole memory");
+            } else {
+                dash.set_busy("Unloading " + base_name(models.running), "The app restarts without a model, about 30 seconds");
+            }
+            restart_at = n + 3;  // three frames with the busy screen on the TV first
         }
 
         if (ui_ok) {

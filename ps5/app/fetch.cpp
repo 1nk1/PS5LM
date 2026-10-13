@@ -23,6 +23,8 @@ int sceHttp2ReadData(int req, void * buf, size_t size);
 int sceHttp2DeleteRequest(int req);
 int sceHttp2SetAutoRedirect(int id, int enable);
 int sceHttp2GetAllResponseHeaders(int req, char ** headers, size_t * size);
+int sceHttp2SetRecvTimeOut(int id, uint32_t usec);
+int sceHttp2SetConnectTimeOut(int id, uint32_t usec);
 }
 
 namespace ps5lm {
@@ -31,6 +33,7 @@ namespace {
 
 std::mutex g_init;
 int        g_template = -1;
+int        g_http = -1;
 std::string g_init_error;
 
 // The libraries once per process; their contexts live as long as it does.
@@ -51,11 +54,12 @@ bool init(std::string * error) {
         std::snprintf(text, sizeof(text), "sceNetPoolCreate 0x%x", net);
     } else if ((ssl = sceSslInit(512 * 1024)) < 0) {
         std::snprintf(text, sizeof(text), "sceSslInit 0x%x", ssl);
-    } else if ((http = sceHttp2Init(net, ssl, 512 * 1024, 4)) < 0) {
+    } else if ((http = sceHttp2Init(net, ssl, 512 * 1024, 4)) < 0) {  // more requests or pool: refused, 0x817b121c
         std::snprintf(text, sizeof(text), "sceHttp2Init 0x%x", http);
     } else if ((g_template = sceHttp2CreateTemplate(http, "PS5LM/1.0", 3, 1)) < 0) {
         std::snprintf(text, sizeof(text), "sceHttp2CreateTemplate 0x%x", g_template);
     } else {
+        g_http = http;
         return true;
     }
     g_template = -1;
@@ -69,13 +73,7 @@ bool init(std::string * error) {
 namespace {
 
 // The Location header of a redirect, or empty.
-std::string location(int req) {
-    char *  headers = nullptr;
-    size_t  size = 0;
-    if (sceHttp2GetAllResponseHeaders(req, &headers, &size) != 0 || !headers) {
-        return {};
-    }
-    const std::string h(headers, size);
+std::string location_in(const std::string & h) {
     for (size_t at = 0; at < h.size();) {
         const size_t end = h.find('\n', at);
         std::string line = h.substr(at, end == std::string::npos ? std::string::npos : end - at);
@@ -90,14 +88,34 @@ std::string location(int req) {
     return {};
 }
 
+std::string location(int req) {
+    char *  headers = nullptr;
+    size_t  size = 0;
+    if (sceHttp2GetAllResponseHeaders(req, &headers, &size) != 0 || !headers) {
+        return {};
+    }
+    return location_in(std::string(headers, size));
+}
+
 }  // namespace
 
+int https_template() {
+    std::string error;
+    if (!init(&error)) {
+        return -1;
+    }
+    return sceHttp2CreateTemplate(g_http, "PS5LM/1.0", 3, 1);
+}
+
 FetchResult https_get(const std::string & url_in, const std::string & range,
-                      const std::function<bool(const char *, size_t)> & sink) {
+                      const std::function<bool(const char *, size_t)> & sink, int tmpl, size_t buffer) {
     FetchResult r;
     const auto t0 = std::chrono::steady_clock::now();
     if (!init(&r.error)) {
         return r;
+    }
+    if (tmpl < 0) {
+        tmpl = g_template;
     }
     char text[160];
     // Redirects are followed here, not by the library: after following one
@@ -106,13 +124,17 @@ FetchResult https_get(const std::string & url_in, const std::string & range,
     std::string url = url_in;
     int req = -1;
     for (int hop = 0; hop < 6; ++hop) {
-        req = sceHttp2CreateRequestWithURL(g_template, "GET", url.c_str(), 0);
+        req = sceHttp2CreateRequestWithURL(tmpl, "GET", url.c_str(), 0);
         if (req < 0) {
             std::snprintf(text, sizeof(text), "sceHttp2CreateRequestWithURL 0x%x", req);
             r.error = text;
             return r;
         }
         sceHttp2SetAutoRedirect(req, 0);
+        // A connection that goes quiet fails after 30 s instead of hanging;
+        // the downloader then asks again for the rest.
+        sceHttp2SetConnectTimeOut(req, 30u * 1000 * 1000);
+        sceHttp2SetRecvTimeOut(req, 30u * 1000 * 1000);
         if (!range.empty()) {
             sceHttp2AddRequestHeader(req, "Range", range.c_str(), 0);
         }
@@ -146,7 +168,7 @@ FetchResult https_get(const std::string & url_in, const std::string & range,
         r.length = (int64_t) length;  // result 0: the length is known
     }
     // Large reads: 64 KiB ones ran at about 200 KB/s.
-    std::vector<char> buf(4u << 20);
+    std::vector<char> buf(buffer);
     for (;;) {
         const int n = sceHttp2ReadData(req, buf.data(), buf.size());
         if (n < 0) {

@@ -7,6 +7,60 @@ v0.1.x are the upstream payload releases by cobanov.
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-13
+
+### Added
+- Downloads page (the fifth on L1/R1): a queue kept in
+  `/data/PS5LM/downloads.json`, each entry with its speed, time left and
+  state. Cross pauses or resumes (or tries a failed one again), Square twice
+  cancels and deletes the partial file, or clears a finished one.
+- Downloads survive a dropped connection, a pause and the app restarting: the
+  file is fetched in 32 MiB pieces on two connections, the part done from its
+  start is saved with the queue, and a lost connection is retried on its own
+  (4, 8, 16, 32, then 60 s apart, up to 20 times in a row). The SHA-256 is
+  checked once the file is whole.
+- Get models: Square checks whether the file under the cursor fits, and the
+  row says CHECKING while its header is read.
+- A busy screen (a spinner and what is happening) while a model is switched or
+  unloaded, before the restart for "unload and download", and while the
+  models are planned again after a context or cache change.
+- README rewritten around the app: features, the payloads it needs, controls.
+  The payload's README moved to `docs/PAYLOAD.md`.
+
+### Fixed
+- A download that lost its connection failed and threw away what it had
+  (2.0 of 10.4 GB, `sceHttp2ReadData 0x804101a3`); now it carries on.
+- A connection that went quiet could hang a download: requests now time out
+  after 30 s without data and are asked again.
+- Settings froze the app for seconds on every change, each one reading every
+  model's header again. Only the context and cache settings re-plan now, in
+  the background behind the busy screen; the others apply at once.
+
+### Measured (download speed on the console)
+- The PC on the same network: 19.6 MB/s from Hugging Face on one connection.
+- libSceHttp2 (HTTP/2), one connection: 2.8 to 5.9 MB/s, varying more from run
+  to run than with any setting. Reads of 256 KiB gave 0.65 MB/s (each read
+  waits about half a second), 4 MiB and larger 3 to 6 MB/s. Four requests on
+  one template share one connection (3.5 to 6 MB/s); on four templates, made
+  one at a time, 2.8 MB/s; on two, 4.2 MB/s. Made in four threads at once,
+  the templates crashed the app.
+- libSceHttp2 takes at most 4 requests (512 KiB pool); 8 or 16 are refused
+  (`0x817b121c`).
+- libSceHttp (HTTP/1.1): 0.44 MB/s per connection whatever the read or receive
+  block size, adding up with more connections (4: 1.6, 8: 2.5 MB/s, one of
+  the eight refused).
+- In the app, two pieces at once on their own templates: 7.0 to 9.8 MB/s for
+  a 1.9 GiB file (v0.7: 3.8 MB/s), still well under the PC's speed. Going
+  further needs sockets and TLS of our own, for a later release.
+
+### Checked on the console
+- A 1.9 GiB download: paused (the partial file stopped growing), resumed from
+  the saved 128 MiB, closed and relaunched mid-download (carried on from
+  905 MiB), finished with its SHA-256 matching.
+- Get models during a download: search, listing and fit checks work.
+- The busy screen on a context change; the library re-planned behind it.
+- Payloads stayed up throughout.
+
 ## [0.7.0] - 2026-10-10
 
 ### Added
