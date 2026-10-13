@@ -4,10 +4,10 @@
 
 **llama.cpp on a jailbroken PlayStation 5, on its GPU.** A native app that runs GGUF language models on the console itself, with a dashboard on the TV, a model store, and a chat and OpenAI-compatible API for every device on your network.
 
-> **This is a fork.** PS5LM was created by **[Mert Cobanov](https://github.com/cobanov)** ([cobanov/PS5LM](https://github.com/cobanov/PS5LM), [ps5lm.cobanov.dev](https://ps5lm.cobanov.dev)): the llama.cpp port, the payload, its model library and the research all come from there. This fork, by [Abhiram](https://github.com/abhi245y), adds the **native GPU app** (v0.2.0 and later), offered back upstream in [cobanov/PS5LM#12](https://github.com/cobanov/PS5LM/pull/12). The original payload's README is kept in [docs/PAYLOAD.md](docs/PAYLOAD.md).
+> **This is a fork.** PS5LM was created by **[Mert Cobanov](https://github.com/cobanov)** ([cobanov/PS5LM](https://github.com/cobanov/PS5LM), [ps5lm.cobanov.dev](https://ps5lm.cobanov.dev)): the llama.cpp port, the payload, its model library and the research all come from there. This fork, by me, adds the **native GPU app**, offered back upstream in [cobanov/PS5LM#12](https://github.com/cobanov/PS5LM/pull/12). The original payload's README is kept in [docs/PAYLOAD.md](docs/PAYLOAD.md).
 
 <p align="center">
-  <img src="docs/media/app/dashboard-generating.jpg" width="820" alt="The PS5LM dashboard on the TV while Gemma 4 generates">
+  <img src="docs/media/app/dashboard-generating.jpg" width="820" alt="The PS5LM dashboard on the TV while Qwen 3.8 27B generates at 20.9 tok/s">
 </p>
 
 ## What it does
@@ -25,18 +25,16 @@ For comparison, the 27B on the CPU as a payload, streamed from disk, made about 
 
 <table>
   <tr>
-    <td><img src="docs/media/app/library.jpg" alt="The model library: internal storage and USB drive sections"></td>
-    <td><img src="docs/media/app/dashboard-qwen.jpg" alt="The dashboard with Qwen 3.8 27B UD-Q2_K_XL loaded"></td>
+    <td><img src="docs/media/app/library.jpg" alt="The model library: internal storage and USB drive sections, each with its fit plan"></td>
+    <td><img src="docs/media/app/dashboard-qwen.jpg" alt="The loaded-model panel for Qwen 3.8 27B UD-IQ2_XXS: its plan and llama-server arguments"></td>
   </tr>
   <tr>
     <td align="center">The model library at launch</td>
-    <td align="center">Qwen 3.8 27B loaded</td>
+    <td align="center">Qwen 3.8 27B loaded: the plan and the arguments it runs with</td>
   </tr>
 </table>
 
 ## Features
-
-**On the TV** (five pages, L1/R1 to move between them)
 
 - **Dashboard:** generation speed with its history, GPU and CPU use, SoC power and energy per token, temperatures and fan, the memory pool and how the model, KV cache and the rest split it, context in use, storage on every drive, and the loaded model. Cross expands the USAGE, POWER and MODEL cards.
 - **Model library:** every `.gguf` on internal storage, an M.2 drive or a USB drive, grouped by drive. Each shows the context and KV cache it would get and whether it fits; Cross loads it. A model on USB or M.2 loads straight from the drive.
@@ -44,7 +42,6 @@ For comparison, the 27B on the CPU as a payload, streamed from disk, made about 
 - **Logs:** `app.log` and `llama.log` on the TV, with an errors-only filter.
 - **Get models:** Hugging Face's GGUF repositories, most downloaded or by family. Each file shows its size and whether it fits this console (Square checks one on demand, read from the first 16 MiB of the file). Cross downloads it.
 - **Downloads:** a queue that survives a dropped connection, a pause and the app restarting. Each download resumes where it stopped, retries on its own, and shows speed and time left. Cross pauses or resumes, Square cancels. Files are checked against their SHA-256.
-- **Busy screen:** anything that takes a while (switching or unloading a model, re-planning after a settings change) says what it is doing, so a pause never looks like a crash.
 
 **Safety checks**
 
@@ -56,7 +53,7 @@ For comparison, the 27B on the CPU as a payload, streamed from disk, made about 
 
 <p align="center">
   <img src="docs/media/app/webui-chat.jpg" width="820" alt="llama.cpp's web UI served by the PS5, answering with Llama 3.2 3B">
-  <br><sub>The chat in a PC's browser, served by the PS5: Llama 3.2 3B on the console's GPU at 105 tok/s, explaining that a games console cannot run a chatbot on its own.</sub>
+  <br><sub>The chat in a PC's browser, served by the PS5: Llama 3.2 3B on the console's GPU at 105 tok/s</sub>
 </p>
 
 - **Chat:** llama.cpp's web UI at `http://<console IP>:8081`, with file tools and, for vision models such as Gemma 4, images (put the model's `mmproj` file beside it).
@@ -66,11 +63,11 @@ For comparison, the 27B on the CPU as a payload, streamed from disk, made about 
 
 - **Planner:** picks the longest context and the best KV cache type that fit the memory free, per model.
 - **Presets:** sampling settings for Qwen 3.5/3.6/3.8, Gemma 4, gpt-oss, Granite, Nemotron, Mistral and Llama.
-- **Sensors and storage:** a title may not read the temperature, fan or power sensors, or the real free space of a drive, so the app carries [ps5-exporter](https://github.com/Marice/ps5-exporter) (Marice, GPL-3.0) and hands it to elfldr when it is not running.
+- **Sensors and storage:** a title may not read the temperature, fan or power sensors, or the real free space of a drive, so the app carries [ps5-exporter](https://github.com/Marice/ps5-exporter) and hands it to elfldr when it is not running.
 
 ## What you need
 
-A PS5 you own, on firmware 7.00 to 13.60, jailbroken, with these payloads loaded before you start the app:
+A jailbroken PS5, with these payloads loaded before you start the app:
 
 | Payload | Needed for | |
 |---|---|---|
@@ -79,17 +76,14 @@ A PS5 you own, on firmware 7.00 to 13.60, jailbroken, with these payloads loaded
 | [ShadowMountPlus](https://github.com/drakmor/ShadowMountPlus) | registers PS5LM from `/data/homebrew` on the home screen | required |
 | [elfldr](https://github.com/ps5-payload-dev/elfldr) (port 9021) | lets the app start ps5-exporter: thermals, fan, power and real free space | strongly recommended |
 | [ftpsrv](https://github.com/ps5-payload-dev/ftpsrv) (port 2121) | installing and updating the app, copying models from a PC | recommended |
-| [klogsrv](https://github.com/ps5-payload-dev/klogsrv) (port 3232) | the console's log over the network, for troubleshooting | optional |
 
 ps5-exporter comes inside the app; you do not load it yourself.
-
-On one console the app crashed at launch with only kstuff-lite, ShadowMountPlus and a DNS payload loaded, and started fine once etaHEN, ftpsrv and klogsrv were added. Which of the three it needed was not isolated, so load at least etaHEN, and all three if the app does not start. Without elfldr the app still works, but the THERMALS and POWER cards stay empty and free space shows as unknown.
 
 ## Install
 
 1. Download `ps5lm-app-vX.Y.Z.zip` from this fork's [releases](https://github.com/abhi245y/PS5LM/releases) and check it against its `.sha256`.
 2. Unzip it and copy the `PPSA99581` folder to `/data/homebrew/PPSA99581` over FTP. ShadowMountPlus adds **PS5LM** to the home screen.
-3. Start PS5LM. Pick a model in **Get models** (R1 three times), or copy a `.gguf` to `/data/PS5LM/models`, or to `PS5LM/models` on a USB drive (exFAT) or the M.2 drive.
+3. Start PS5LM. Pick a model in **Get models**, or copy a `.gguf` to `/data/PS5LM/models`, or to `PS5LM/models` on a USB drive (exFAT) or the M.2 drive.
 4. Choose the model in the library. Once the dashboard says Ready, open `http://<console IP>:8081` on a phone or computer.
 
 To update, close the app and copy the new `PPSA99581` folder over the old one. Settings, models and downloads stay in `/data/PS5LM`.
