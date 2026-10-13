@@ -38,13 +38,21 @@ struct DashboardFrame {
 class Dashboard {
   public:
     static constexpr int kTiles = 8;
-    static constexpr int kPages = 4;
+    static constexpr int kPages = 5;
     static constexpr int kLogsPage = 2;
     static constexpr int kMarketPage = 3;
+    static constexpr int kDownloadsPage = 4;
 
     explicit Dashboard(const hui::ui::Fonts & fonts) : fonts_(fonts) { ring_.snap(ring_rect()); }
 
     void set_live(const Live & live) { live_ = live; }
+    // Slow work in progress: a spinner and these lines over everything, and
+    // no input until it is cleared (empty title).
+    void set_busy(std::string title, std::string text = {}) {
+        busy_title_ = std::move(title);
+        busy_text_ = std::move(text);
+    }
+    bool busy() const { return !busy_title_.empty(); }
     void open_library();  // over the dashboard, cursor on the loaded model
     void set_settings(const Settings & s) { settings_ = s; }
     const Settings & settings() const { return settings_; }
@@ -67,9 +75,9 @@ class Dashboard {
     // changed (read them with settings()).
     struct Request {
         enum Kind { none, load, unload, settings, clear_scratch, market_search, market_open, market_plan, market_download,
-                    market_download_unload } kind = none;
+                    market_download_unload, download_pause, download_resume, download_remove } kind = none;
         std::string path;   // a model, a market query, or the folder a download goes to (empty: the setting)
-        int repo = -1, file = -1;
+        int repo = -1, file = -1;  // a market file, or (repo) a download's index
     };
     Request take_request() {
         Request r = request_;
@@ -95,6 +103,8 @@ class Dashboard {
     void update_logs(const hui::InputFrame & input, hui::ui::Feedback & feedback);
     void update_market(const hui::InputFrame & input, hui::ui::Feedback & feedback);
     void start_download(hui::ui::Feedback & feedback);
+    void update_downloads(const hui::InputFrame & input, hui::ui::Feedback & feedback);
+    void draw_downloads(hui::gfx::DrawList & list) const;
     void draw_market(hui::gfx::DrawList & list) const;
     const std::vector<std::string> & log_view() const { return log_llama_ ? llama_view_ : app_view_; }
     void refilter_logs();
@@ -105,6 +115,8 @@ class Dashboard {
 
     float age_   = 0;  // seconds since start: the entrance
     float clock_ = 0;  // idle motion
+    std::string busy_title_, busy_text_;
+    void draw_busy(hui::gfx::DrawList & list) const;
     int   focus_ = 0;
     int   came_from_ = -1;
     hui::Direction came_by_ = hui::Direction::none;
@@ -148,6 +160,8 @@ class Dashboard {
     bool  market_confirm_ = false;  // asking whether to unload the model first
     bool  market_space_ = false;    // telling that the download does not fit where it would go
     std::string market_dir_;        // where this download goes instead of the setting, or empty
+    int   dl_cursor_ = 0;           // the Downloads page's row
+    int   dl_confirm_ = -1;         // the row Square was pressed on once (a second press deletes)
     mutable char size_text_[64] = {};
 };
 

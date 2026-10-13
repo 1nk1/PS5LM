@@ -215,9 +215,39 @@ int main(int argc, char ** argv) {
         f.plan = fplans[i];
         mv.repos[0].files.push_back(f);
     }
-    mv.download_file = "Qwen3.8-27B-UD-IQ2_XXS.gguf";
-    mv.download_progress = 0.37f;
-    mv.download_mbps = 14.2;
+    {
+        ps5lm::Download d;
+        d.repo = "unsloth/Qwen3.8-27B-GGUF";
+        d.file = "Qwen3.8-27B-UD-IQ2_XXS.gguf";
+        d.dir = "/data/PS5LM/models";
+        d.bytes = (uint64_t) (6.8 * 1073741824.0);
+        d.done = (uint64_t) (2.5 * 1073741824.0);
+        d.state = ps5lm::DownloadState::running;
+        d.mbps = 14.2;
+        mv.downloads.push_back(d);
+        d.file = "gemma-4-12b-it-Q4_K_M.gguf";
+        d.repo = "unsloth/gemma-4-12b-it-GGUF";
+        d.dir = "/mnt/usb0/PS5LM/models";
+        d.bytes = (uint64_t) (7.1 * 1073741824.0);
+        d.done = 0;
+        d.mbps = 0;
+        d.state = ps5lm::DownloadState::queued;
+        mv.downloads.push_back(d);
+        d.file = "Llama-3.2-3B-Instruct-Q4_K_M.gguf";
+        d.repo = "bartowski/Llama-3.2-3B-Instruct-GGUF";
+        d.bytes = 2019377696;
+        d.done = 812000000;
+        d.state = ps5lm::DownloadState::retrying;
+        d.note = "Connection lost (sceHttp2ReadData 0x804101a3); trying again in 12 s, attempt 2";
+        mv.downloads.push_back(d);
+        d.file = "SmolLM2-135M-Instruct-F16.gguf";
+        d.repo = "unsloth/SmolLM2-135M-Instruct-GGUF";
+        d.dir = "/data/PS5LM/models";
+        d.bytes = d.done = 270885952;
+        d.state = ps5lm::DownloadState::done;
+        d.note = "Saved to /data/PS5LM/models/SmolLM2-135M-Instruct-F16.gguf";
+        mv.downloads.push_back(d);
+    }
     dash.set_market(mv);
     std::vector<unsigned char> pixels((size_t) W * H * 4);
     stbi_flip_vertically_on_write(1);
@@ -323,11 +353,20 @@ int main(int argc, char ** argv) {
     step(30, press(hui::Action::confirm), false);
     step(20, nav(hui::Direction::down), false);
     shot("12-market-files");
-    mv.download_progress = -1;  // nothing downloading, so Cross asks first
     dash.set_market(mv);
     step(30, press(hui::Action::confirm), false);
     shot("13-market-space");
     step(30, press(hui::Action::confirm), false);
     shot("14-market-confirm");
+    step(20, press(hui::Action::back), false);
+    step(30, press(hui::Action::page_next), false);
+    shot("15-downloads");
+    step(20, nav(hui::Direction::down), false);
+    step(20, nav(hui::Direction::down), false);
+    step(20, press(hui::Action::west), false);
+    shot("16-downloads-cancel");
+    dash.set_busy("Applying the new limits", "Planning every model again for 32k tokens and the q8_0 cache");
+    step(20, press(hui::Action::back), false);
+    shot("17-busy");
     return ok ? 0 : 1;
 }

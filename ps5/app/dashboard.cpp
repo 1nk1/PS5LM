@@ -159,7 +159,7 @@ Color state_color(ServerState s) {
 
 constexpr float kRowH = 78.0f;
 constexpr Rect  kLibrary{ 360.0f, 150.0f, 1200.0f, 800.0f };
-constexpr const char * kPageNames[Dashboard::kPages] = { "Dashboard", "Settings", "Logs", "Get models" };
+constexpr const char * kPageNames[Dashboard::kPages] = { "Dashboard", "Settings", "Logs", "Get models", "Downloads" };
 
 // The market's searches, switched with L2/R2: Hugging Face's most downloaded
 // GGUF repositories, then the families the presets know.
@@ -232,7 +232,9 @@ Rect Dashboard::ring_rect() const {
     return scaled(tile_rect(focus_), 1.0f + kLift).inset(-5.0f);
 }
 
-void Dashboard::update(const hui::InputFrame & input, float dt, ui::Feedback & feedback) {
+void Dashboard::update(const hui::InputFrame & raw, float dt, ui::Feedback & feedback) {
+    const hui::InputFrame none{};
+    const hui::InputFrame & input = busy() ? none : raw;  // busy: the screen says so, buttons wait
     age_ += dt;
     clock_ += dt;
     page_age_ += dt;
@@ -263,6 +265,8 @@ void Dashboard::update(const hui::InputFrame & input, float dt, ui::Feedback & f
         update_settings(input, feedback);
     } else if (page_ == kLogsPage) {
         update_logs(input, feedback);
+    } else if (page_ == kDownloadsPage) {
+        update_downloads(input, feedback);
     } else {
         update_market(input, feedback);
     }
@@ -693,8 +697,8 @@ void Dashboard::update_market(const hui::InputFrame & input, ui::Feedback & feed
                 }
             }
             market_dir_.clear();
-            if (f.fits == 0 || market_.download_progress >= 0) {
-                feedback.play(hui::audio::Cue::error);  // too big, or one download already runs
+            if (f.fits == 0) {
+                feedback.play(hui::audio::Cue::error);  // too big
             } else if (!to || (to->total > 0 && to->free < need)) {  // unknown space (no exporter) does not block
                 market_space_ = true;
                 market_dir_ = other ? other->models : "";
@@ -704,12 +708,22 @@ void Dashboard::update_market(const hui::InputFrame & input, ui::Feedback & feed
             }
         }
     }
+    // Square: read this file's header now and say whether it fits.
+    if (input.is_pressed(Action::west) && market_files_ && open && cursor < files) {
+        const MarketFile & f = open->files[(size_t) cursor];
+        if (f.fits == -1 || f.fits == -2) {
+            request_ = { Request::market_plan, "", market_.open, cursor };
+            feedback.play(hui::audio::Cue::select);
+        } else {
+            feedback.play(hui::audio::Cue::error, 1.0f, 0.0f, 0.6f);  // checked already
+        }
+    }
     if (input.is_pressed(Action::back) && market_files_) {
         market_files_ = false;
         feedback.play(hui::audio::Cue::back);
     }
     // The first file of a freshly opened repository gets planned too.
-    if (request_.kind == Request::none && market_files_ && files > 0 && market_file_ == 0 && open->files[0].fits == -1 &&
+    if (request_.kind == Request::none && market_files_ && files > 0 && market_file_ == 0 && open->files[0].fits == -1 && !open->files[0].checking &&
         !market_.busy) {
         request_ = { Request::market_plan, "", market_.open, 0 };
     }
@@ -822,6 +836,31 @@ std::string gib(double v) {
     char t[24];
     std::snprintf(t, sizeof(t), "%.1f", v);
     return t;
+}
+
+// "2.1 of 10.4 GiB  ·  3.8 MB/s  ·  37 min left", or the note of one that waits.
+std::string download_line(const Download & d) {
+    char t[200];
+    const double done = d.done / 1073741824.0, all = d.bytes / 1073741824.0;
+    if (d.state == DownloadState::running && d.mbps > 0.05) {
+        const double left_s = (double) (d.bytes - std::min(d.done, d.bytes)) / (d.mbps * 1e6);
+        if (left_s >= 3600) {
+            std::snprintf(t, sizeof(t), "%.1f of %.1f GiB  \xC2\xB7  %.1f MB/s  \xC2\xB7  %.0f h %02.0f min left", done, all,
+                          d.mbps, std::floor(left_s / 3600), std::fmod(left_s / 60, 60));
+        } else {
+            std::snprintf(t, sizeof(t), "%.1f of %.1f GiB  \xC2\xB7  %.1f MB/s  \xC2\xB7  %.0f min left", done, all, d.mbps,
+                          std::ceil(left_s / 60));
+        }
+        return t;
+    }
+    std::snprintf(t, sizeof(t), "%.1f of %.1f GiB", done, all);
+    if (d.state == DownloadState::running) {
+        return std::string(t) + "  \xC2\xB7  starting";
+    }
+    if (!d.note.empty() && d.state != DownloadState::done) {
+        return std::string(t) + "  \xC2\xB7  " + d.note;
+    }
+    return d.state == DownloadState::done ? d.note : d.state == DownloadState::queued ? std::string(t) + "  \xC2\xB7  waiting its turn" : t;
 }
 
 }  // namespace
@@ -1631,13 +1670,13 @@ void Dashboard::draw_market(gfx::DrawList & list) const {
             }
             const size_t slash = mf.name.find_last_of('/');
             const std::string short_name = mf.name.substr(slash == std::string::npos ? 0 : slash + 1);
-            ui::text(list, cur ? f.semibold : f.regular, f.regular.font->fit(short_name, 20, rw - 230), rx + 12, y + 26,
+            ui::text(list, cur ? f.semibold : f.regular, f.regular.font->fit(short_name, 20, rw - 270), rx + 12, y + 26,
                      20, kInk.with_alpha(mf.fits == 0 ? 0.45f : 1.0f));
-            ui::text(list, f.regular, f.regular.font->fit(mf.plan.empty() ? "Not planned yet" : mf.plan, 16, rw - 230),
+            ui::text(list, f.regular, f.regular.font->fit(mf.checking ? std::string("Reading its header to plan the context it would get") : mf.plan.empty() ? std::string("Not checked yet: Square checks whether it fits") : mf.plan, 16, rw - 270),
                      rx + 12, y + 50, 16, kInk.with_alpha(kFaint));
             std::snprintf(text, sizeof(text), "%.1f GiB", mf.bytes / 1073741824.0);
-            ui::text(list, f.mono, text, rx + rw - 110, y + 36, 18, kInk.with_alpha(0.85f), gfx::Align::right);
-            const char * tag = mf.fits == 1 ? "FITS" : mf.fits == 0 ? "TOO BIG" : mf.fits == -2 ? "UNKNOWN" : "CHECK";
+            ui::text(list, f.mono, text, rx + rw - 150, y + 36, 18, kInk.with_alpha(0.85f), gfx::Align::right);
+            const char * tag = mf.checking ? "CHECKING" : mf.fits == 1 ? "FITS" : mf.fits == 0 ? "TOO BIG" : mf.fits == -2 ? "UNKNOWN" : "UNCHECKED";
             const Color  tc  = mf.fits == 1 ? kLime : mf.fits == 0 ? kRose : kInk.with_alpha(kMuted);
             caps(list, f, tag, rx + rw - 8, y + 36, 14, tc, gfx::Align::right);
         }
@@ -1704,15 +1743,119 @@ void Dashboard::draw_market(gfx::DrawList & list) const {
     // The download, under both panes.
     const float by = p.y + p.h - 64;
     list.rounded_rect({ p.x + kPad, by - 24, p.w - 2 * kPad, 1 }, 0, kInk.with_alpha(0.1f));
-    if (M.download_progress >= 0) {
-        std::snprintf(text, sizeof(text), "Downloading %s  \xC2\xB7  %.0f%%  \xC2\xB7  %.1f MB/s", M.download_file.c_str(),
-                      M.download_progress * 100.0f, M.download_mbps);
-        ui::text(list, f.regular, f.regular.font->fit(text, 20, p.w - 2 * kPad - 420), p.x + kPad, by + 6, 20, kInk);
-        bar(list, { p.x + p.w - kPad - 380, by - 4, 380, 12 }, M.download_progress, kLime);
+    const Download * active = nullptr;
+    int waiting = 0;
+    for (const auto & d : M.downloads) {
+        if ((d.state == DownloadState::running || d.state == DownloadState::retrying) && !active) {
+            active = &d;  // the worker runs one at a time; the first is it
+        } else if (d.state == DownloadState::queued) {
+            ++waiting;
+        }
+    }
+    if (active) {
+        std::string line = active->file + "  \xC2\xB7  " + download_line(*active);
+        if (waiting > 0) {
+            line += "  \xC2\xB7  " + std::to_string(waiting) + " more queued";
+        }
+        ui::text(list, f.regular, f.regular.font->fit(line, 20, p.w - 2 * kPad - 420), p.x + kPad, by + 6, 20, kInk);
+        bar(list, { p.x + p.w - kPad - 380, by - 4, 380, 12 },
+            active->bytes ? (float) ((double) active->done / (double) active->bytes) : 0.0f,
+            active->state == DownloadState::retrying ? kAmber : kLime);
     } else {
-        const std::string note = !M.download_result.empty() ? M.download_result
-                                                            : "Downloads go to " + settings_.download_dir + "  \xC2\xB7  change in Settings";
+        const std::string note = !M.note.empty() ? M.note + "  \xC2\xB7  R1 for Downloads"
+                                                 : "Downloads go to " + settings_.download_dir + "  \xC2\xB7  change in Settings";
         ui::text(list, f.regular, f.regular.font->fit(note, 20, p.w - 2 * kPad), p.x + kPad, by + 6, 20, kInk.with_alpha(kMuted));
+    }
+}
+
+void Dashboard::update_downloads(const hui::InputFrame & input, ui::Feedback & feedback) {
+    const int rows = (int) market_.downloads.size();
+    dl_cursor_ = std::clamp(dl_cursor_, 0, std::max(0, rows - 1));
+    if (input.nav == Direction::up || input.nav == Direction::down) {
+        const int next = dl_cursor_ + (input.nav == Direction::down ? 1 : -1);
+        if (next >= 0 && next < rows) {
+            dl_cursor_ = next;
+            dl_confirm_ = -1;
+            feedback.play(hui::audio::Cue::focus, 1.0f + 0.02f * (float) next);
+        } else if (!input.nav_repeat) {
+            feedback.play(hui::audio::Cue::error, 1.0f, 0.0f, 0.6f);
+        }
+    }
+    if (rows == 0) {
+        return;
+    }
+    const Download & d = market_.downloads[(size_t) dl_cursor_];
+    if (input.is_pressed(Action::confirm)) {
+        if (d.state == DownloadState::running || d.state == DownloadState::retrying || d.state == DownloadState::queued) {
+            request_ = { Request::download_pause, "", dl_cursor_ };
+            feedback.play(hui::audio::Cue::select);
+        } else if (d.state == DownloadState::paused || d.state == DownloadState::failed) {
+            request_ = { Request::download_resume, "", dl_cursor_ };
+            feedback.play(hui::audio::Cue::complete);
+        } else {
+            feedback.play(hui::audio::Cue::error, 1.0f, 0.0f, 0.6f);
+        }
+    }
+    // Square: a finished one leaves the list; any other is cancelled and its
+    // partial file deleted, after a second press.
+    if (input.is_pressed(Action::west)) {
+        if (d.state == DownloadState::done || dl_confirm_ == dl_cursor_) {
+            request_ = { Request::download_remove, "", dl_cursor_ };
+            dl_confirm_ = -1;
+            feedback.play(hui::audio::Cue::back);
+        } else {
+            dl_confirm_ = dl_cursor_;
+            feedback.play(hui::audio::Cue::modal_open);
+        }
+    }
+}
+
+void Dashboard::draw_downloads(gfx::DrawList & list) const {
+    const ui::Fonts & f = fonts_;
+    const Rect & p = kLogPanel;
+    draw_panel(list, p, kRadius, 0.0f, kLime);
+    caps(list, f, "DOWNLOADS", p.x + kPad, p.y + kLabelY, kLabelSize, kLime);
+    double left = 0;
+    for (const auto & d : market_.downloads) {
+        if (d.state != DownloadState::done) {
+            left += (double) (d.bytes - std::min(d.done, d.bytes));
+        }
+    }
+    char text[160];
+    std::snprintf(text, sizeof(text), "%zu in the list  \xC2\xB7  %.1f GiB to go  \xC2\xB7  they carry on after a lost connection or a restart",
+                  market_.downloads.size(), left / 1073741824.0);
+    ui::text(list, f.regular, text, p.x + p.w - kPad, p.y + kLabelY, 18, kInk.with_alpha(kMuted), gfx::Align::right);
+    if (market_.downloads.empty()) {
+        ui::text(list, f.regular, "Nothing downloading. Get models (L1) lists what fits; Cross on a file adds it here.",
+                 p.cx(), p.cy(), 24, kInk.with_alpha(kFaint), gfx::Align::center);
+        return;
+    }
+    constexpr float kRow = 112.0f;
+    constexpr int   kShown = 6;
+    const int first = std::max(0, dl_cursor_ - (kShown - 1));
+    for (int i = first; i < (int) market_.downloads.size() && i < first + kShown; ++i) {
+        const Download & d = market_.downloads[(size_t) i];
+        const Rect r{ p.x + kPad, p.y + 84 + (float) (i - first) * kRow, p.w - 2 * kPad, kRow - 14 };
+        if (i == dl_cursor_) {
+            list.glow(r, 18, 18, kLime.with_alpha(0.2f));
+            list.bordered_rect(r, 18, kLime.with_alpha(0.08f), 2.0f, kLime.with_alpha(0.7f));
+        }
+        const bool retrying = d.state == DownloadState::retrying;
+        const char * tag = d.state == DownloadState::running ? "DOWNLOADING" : retrying ? "RECONNECTING"
+                         : d.state == DownloadState::queued ? "QUEUED" : d.state == DownloadState::paused ? "PAUSED"
+                         : d.state == DownloadState::failed ? "FAILED" : "DONE";
+        const Color tc = d.state == DownloadState::running ? kLime : retrying ? kAmber : d.state == DownloadState::failed ? kRose
+                       : d.state == DownloadState::done ? kCyan : kInk.with_alpha(kMuted);
+        ui::text(list, f.semibold, f.semibold.font->fit(d.file, 24, r.w - 420), r.x + 20, r.y + 34, 24, kInk);
+        caps(list, f, tag, r.x + r.w - 20, r.y + 34, 15, tc, gfx::Align::right);
+        std::string sub = d.repo + "  \xC2\xB7  " + drive_name(d.dir) + "  \xC2\xB7  " + download_line(d);
+        if (dl_confirm_ == i) {
+            sub = "Square again cancels it and deletes the " + gib(d.done / 1073741824.0) + " GiB downloaded so far";
+        }
+        ui::text(list, f.regular, f.regular.font->fit(sub, 18, r.w - 40), r.x + 20, r.y + 62, 18,
+                 dl_confirm_ == i ? kRose : kInk.with_alpha(kMuted));
+        bar(list, { r.x + 20, r.y + 78, r.w - 40, 8 }, d.bytes ? (float) ((double) d.done / (double) d.bytes) : 0.0f,
+            d.state == DownloadState::done ? kCyan : retrying ? kAmber : d.state == DownloadState::failed ? kRose : kLime);
     }
 }
 
@@ -1798,8 +1941,21 @@ void Dashboard::draw_hints(DashboardFrame & frame) const {
         // The dialog carries its own buttons.
     } else if (page_ == kMarketPage) {
         const ui::Hint browse[] = { { ui::Button::l2, "Search" }, { ui::Button::dpad, "Choose" }, { ui::Button::cross, "Open" } };
-        const ui::Hint files[] = { { ui::Button::dpad, "Choose" }, { ui::Button::cross, "Download" }, { ui::Button::circle, "Back" } };
-        ui::draw_hints(frame.scene, fonts_, style, market_files_ ? files : browse, 3, kGridX + kGridW, true);
+        const ui::Hint files[] = { { ui::Button::dpad, "Choose" }, { ui::Button::square, "Check fit" }, { ui::Button::cross, "Download" },
+                                   { ui::Button::circle, "Back" } };
+        ui::draw_hints(frame.scene, fonts_, style, market_files_ ? files : browse, market_files_ ? 4 : 3, kGridX + kGridW, true);
+    } else if (page_ == kDownloadsPage) {
+        const Download * d = dl_cursor_ < (int) market_.downloads.size() ? &market_.downloads[(size_t) dl_cursor_] : nullptr;
+        const bool runs = d && (d->state == DownloadState::running || d->state == DownloadState::retrying ||
+                                d->state == DownloadState::queued);
+        const char * cross = !d ? "" : runs ? "Pause" : d->state == DownloadState::done ? "" : d->state == DownloadState::failed ? "Try again" : "Resume";
+        const char * square = !d ? "" : d->state == DownloadState::done ? "Clear from list" : dl_confirm_ == dl_cursor_ ? "Yes, delete it" : "Cancel";
+        const ui::Hint all[] = { { ui::Button::dpad, "Choose" }, { ui::Button::square, square }, { ui::Button::cross, cross } };
+        const ui::Hint done[] = { { ui::Button::dpad, "Choose" }, { ui::Button::square, square } };
+        if (d) {
+            const bool has_cross = d->state != DownloadState::done;
+            ui::draw_hints(frame.scene, fonts_, style, has_cross ? all : done, has_cross ? 3 : 2, kGridX + kGridW, true);
+        }
     } else if (page_ == kLogsPage) {
         const ui::Hint hints[] = { { ui::Button::dpad, "Scroll" },
                                    { ui::Button::square, log_llama_ ? "app.log" : "llama.log" },
@@ -1856,6 +2012,8 @@ void Dashboard::draw(DashboardFrame & frame) const {
         draw_settings(scene);
     } else if (page_ == kLogsPage) {
         draw_logs(scene);
+    } else if (page_ == kDownloadsPage) {
+        draw_downloads(scene);
     } else {
         draw_market(scene);
     }
@@ -1869,6 +2027,28 @@ void Dashboard::draw(DashboardFrame & frame) const {
         draw_details(frame.overlay, frame.glass_texture);
     }
     draw_hints(frame);
+    if (busy()) {
+        draw_busy(frame.overlay);  // the overlay draws last, over the library too
+    }
+}
+
+// Slow work: a scrim, a turning arc and what is happening, so a pause never
+// looks like a hang.
+void Dashboard::draw_busy(gfx::DrawList & list) const {
+    const ui::Fonts & f = fonts_;
+    list.rounded_rect({ 0, 0, 1920, 1080 }, 0, kBlack.with_alpha(0.6f));
+    const Rect d{ 960 - 420, 540 - 120, 840, 240 };
+    list.shadow({ d.x, d.y + 18, d.w, d.h }, 28, 40, kBlack.with_alpha(0.6f));
+    draw_panel(list, d, 28, 1.0f, kCyan);
+    const float cx = d.x + 92, cy = d.cy();
+    list.ring(cx, cy, 34, 6, kInk.with_alpha(0.12f));
+    const float sweep = 1.6f + 0.9f * std::sin(clock_ * 2.1f);
+    list.arc(cx, cy, 34, 6, clock_ * 5.0f, sweep, kCyan);
+    ui::text(list, f.semibold, f.semibold.font->fit(busy_title_, 28, d.w - 200), d.x + 160, cy - 10, 28, kInk);
+    if (!busy_text_.empty()) {
+        ui::text(list, f.regular, f.regular.font->fit(busy_text_, 21, d.w - 200), d.x + 160, cy + 30, 21,
+                 kInk.with_alpha(kMuted));
+    }
 }
 
 }  // namespace ps5lm

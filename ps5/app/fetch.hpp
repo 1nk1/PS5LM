@@ -21,7 +21,14 @@ struct FetchResult {
 
 // GET `url`, optionally with a Range header ("bytes=0-16777215"). Each piece
 // of the body goes to `sink`; returning false from it stops the download.
+// `tmpl`: a template from https_template(), or -1 for the shared one; each
+// template may keep its own connections. `buffer`: bytes asked of each read.
 FetchResult https_get(const std::string & url, const std::string & range,
-                      const std::function<bool(const char *, size_t)> & sink);
+                      const std::function<bool(const char *, size_t)> & sink, int tmpl = -1,
+                      size_t buffer = 4u << 20);
+
+// A new template on the shared context, or a negative error. Make them one
+// at a time: four threads making theirs at once crashed the app.
+int https_template();
 
 }  // namespace ps5lm
