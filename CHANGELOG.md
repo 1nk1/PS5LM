@@ -7,6 +7,17 @@ v0.1.x are the upstream payload releases by cobanov.
 
 ## [Unreleased]
 
+## [0.8.2] - 2026-10-13
+
+### Changed
+- `contentVersion` in `sce_sys/param.json` now follows the app's version
+  (major+1, minor, patch: 0.8.2 is `01.008.002`). It had stayed at
+  `01.000.000` since the first release, so stores such as ProsperoStore
+  could not tell an installed copy was out of date. `scripts/release-app.sh`
+  refuses to package a release whose `contentVersion` doesn't match.
+- README: new screenshots from v0.8.1 (Qwen 3.8 27B generating, the library,
+  the loaded-model panel) and a shorter text.
+
 ## [0.8.1] - 2026-10-13
 
 ### Fixed
