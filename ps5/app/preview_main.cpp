@@ -56,7 +56,7 @@ float g_loading = -1;  // >= 0: draw the loading state at this progress
 ps5lm::Live sample(float seconds, bool generating) {
     ps5lm::Live L;
     L.state       = generating ? ps5lm::ServerState::generating : ps5lm::ServerState::ready;
-    L.address     = "http://192.168.1.19:8081";
+    L.address     = "192.168.1.19:8081";
     L.model_label = "Qwen3.8-27B-UD-Q2_K_XL";
     L.model_arch  = "qwen35";
     L.preset      = "Qwen 3.8";

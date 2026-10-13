@@ -227,7 +227,7 @@ void StatsCollector::start(int port) {
         std::lock_guard<std::mutex> lock(mutex_);
         live_.cpus = usable_cpus();
         const std::string ip = local_address();
-        live_.address = "http://" + (ip.empty() ? std::string("<console IP>") : ip) + ":" + std::to_string(port);
+        live_.address = (ip.empty() ? std::string("<console IP>") : ip) + ":" + std::to_string(port);
     }
     std::thread([this] { run(); }).detach();
 }

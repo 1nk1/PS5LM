@@ -1,18 +1,18 @@
-<p align="center"><img src="docs/media/app/icon.png" width="128" alt="PS5LM app icon"></p>
+<p align="center"><img src="docs/media/app/icon.png" width="128" alt="PS5LM Plus app icon"></p>
 
-# PS5LM
+# PS5LM Plus
 
 **llama.cpp on a jailbroken PlayStation 5, on its GPU.** A native app that runs GGUF language models on the console itself, with a dashboard on the TV, a model store, and a chat and OpenAI-compatible API for every device on your network.
 
-> **This is a fork.** PS5LM was created by **[Mert Cobanov](https://github.com/cobanov)** ([cobanov/PS5LM](https://github.com/cobanov/PS5LM), [ps5lm.cobanov.dev](https://ps5lm.cobanov.dev)): the llama.cpp port, the payload, its model library and the research all come from there. This fork, by me, adds the **native GPU app**, offered back upstream in [cobanov/PS5LM#12](https://github.com/cobanov/PS5LM/pull/12). The original payload's README is kept in [docs/PAYLOAD.md](docs/PAYLOAD.md).
+> **This is a fork.** PS5LM was created by **[Mert Cobanov](https://github.com/cobanov)** ([cobanov/PS5LM](https://github.com/cobanov/PS5LM), [ps5lm.cobanov.dev](https://ps5lm.cobanov.dev)): the llama.cpp port, the payload, its model library and the research all come from there. This fork, by me, adds the **native GPU app**, named PS5LM Plus to tell it apart from the original, offered back upstream in [cobanov/PS5LM#12](https://github.com/cobanov/PS5LM/pull/12). The original payload's README is kept in [docs/PAYLOAD.md](docs/PAYLOAD.md).
 
 <p align="center">
-  <img src="docs/media/app/dashboard-generating.jpg" width="820" alt="The PS5LM dashboard on the TV while Qwen 3.8 27B generates at 20.9 tok/s">
+  <img src="docs/media/app/dashboard-generating.jpg" width="820" alt="The PS5LM Plus dashboard on the TV while Qwen 3.8 27B generates at 20.9 tok/s">
 </p>
 
 ## What it does
 
-A payload gets about 6 GiB of memory and no GPU. A native app (a title) gets the console's 12 GiB of direct memory and the GPU, so PS5LM runs as one: llama-server with ggml's Vulkan backend on Mihawk-99's RADV port, in one 11.44 GiB device heap.
+A payload gets about 6 GiB of memory and no GPU. A native app (a title) gets the console's 12 GiB of direct memory and the GPU, so PS5LM Plus runs as one: llama-server with ggml's Vulkan backend on Mihawk-99's RADV port, in one 11.44 GiB device heap.
 
 | Model (on the PS5 GPU) | Context | Generation |
 |---|---|---|
@@ -73,7 +73,7 @@ A jailbroken PS5, with these payloads loaded before you start the app:
 |---|---|---|
 | [kstuff-lite](https://github.com/EchoStretch/kstuff-lite) | the kernel patches homebrew titles run on | required |
 | [etaHEN](https://github.com/etaHEN/etaHEN) | homebrew support (see the note below) | required |
-| [ShadowMountPlus](https://github.com/drakmor/ShadowMountPlus) | registers PS5LM from `/data/homebrew` on the home screen | required |
+| [ShadowMountPlus](https://github.com/drakmor/ShadowMountPlus) | registers PS5LM Plus from `/data/homebrew` on the home screen | required |
 | [elfldr](https://github.com/ps5-payload-dev/elfldr) (port 9021) | lets the app start ps5-exporter: thermals, fan, power and real free space | strongly recommended |
 | [ftpsrv](https://github.com/ps5-payload-dev/ftpsrv) (port 2121) | installing and updating the app, copying models from a PC | recommended |
 
@@ -82,7 +82,7 @@ ps5-exporter comes inside the app; you do not load it yourself.
 ## Install
 
 1. Download `ps5lm-app-vX.Y.Z.zip` from this fork's [releases](https://github.com/abhi245y/PS5LM/releases) and check it against its `.sha256`.
-2. Unzip it and copy the `PPSA99581` folder to `/data/homebrew/PPSA99581` over FTP. ShadowMountPlus adds **PS5LM** to the home screen.
+2. Unzip it and copy the `PPSA99581` folder to `/data/homebrew/PPSA99581` over FTP. ShadowMountPlus adds **PS5LM Plus** to the home screen.
 3. Start PS5LM. Pick a model in **Get models**, or copy a `.gguf` to `/data/PS5LM/models`, or to `PS5LM/models` on a USB drive (exFAT) or the M.2 drive.
 4. Choose the model in the library. Once the dashboard says Ready, open `http://<console IP>:8081` on a phone or computer.
 
@@ -172,4 +172,4 @@ Earlier PS5 LLM work hand-writes GPU kernels for one model at a time. PS5LM port
 
 GPL-3.0-or-later, see [LICENSE](LICENSE). llama.cpp keeps its MIT licence. No Sony SDK files, keys, firmware or model weights are in this repository.
 
-PS5LM is not affiliated with Sony Interactive Entertainment or Alibaba. "PlayStation" and "PS5" are trademarks of Sony Interactive Entertainment.
+PS5LM Plus is not affiliated with Sony Interactive Entertainment or Alibaba. "PlayStation" and "PS5" are trademarks of Sony Interactive Entertainment.

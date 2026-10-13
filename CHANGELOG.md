@@ -7,6 +7,17 @@ v0.1.x are the upstream payload releases by cobanov.
 
 ## [Unreleased]
 
+## [0.8.3] - 2026-10-13
+
+### Changed
+- The app is now called **PS5LM Plus**, to tell it apart from Mert Cobanov's
+  original PS5LM payload: on the home screen, in the dashboard header and in
+  the console's notifications. The title ID (PPSA99581), the data folder
+  (`/data/PS5LM`) and the repository stay as they were, so updating keeps
+  settings, models and downloads.
+- The dashboard header shows the chat's address without "Chat at http://",
+  so it clears the page tabs with any IP address.
+
 ## [0.8.2] - 2026-10-13
 
 ### Changed
