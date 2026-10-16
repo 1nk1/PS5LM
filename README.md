@@ -98,8 +98,10 @@ When storage stays closed, the first start asks which way to go: set up the HEN 
 again, or go on without it. Without it, settings, the log and downloads stay in the app's own space,
 `/download0` (over FTP: `/mnt/sandbox/PPSA99581_000/download0/PS5LM`), whose size is
 `downloadDataSize` in `sce_sys/param.json`; models copied to `/data/homebrew/PPSA99581/models`
-load too. USB and M.2 drives stay out of reach. Uninstalling the app deletes the models in both
-places, so update by copying the new folder over the old one.
+load too. USB and M.2 drives stay out of reach. An update that raises `downloadDataSize` grows the
+space at the next start and keeps what is in it; lowering it frees nothing (tested on 13.60).
+Uninstalling the app deletes the models in both places, so update by copying the new folder over
+the old one.
 
 Which models fit is in [docs/MODELS.md](docs/MODELS.md); anything llama.cpp runs works if the library shows LOAD.
 
