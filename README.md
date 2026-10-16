@@ -83,10 +83,19 @@ ps5-exporter comes inside the app; you do not load it yourself.
 
 1. Download `ps5lm-app-vX.Y.Z.zip` from this fork's [releases](https://github.com/abhi245y/PS5LM/releases) and check it against its `.sha256`.
 2. Unzip it and copy the `PPSA99581` folder to `/data/homebrew/PPSA99581` over FTP. ShadowMountPlus adds **PS5LM Plus** to the home screen.
-3. Start PS5LM. Pick a model in **Get models**, or copy a `.gguf` to `/data/PS5LM/models`, or to `PS5LM/models` on a USB drive (exFAT) or the M.2 drive.
+3. Start PS5LM. Pick a model in **Get models**, or copy a `.gguf` to `/data/PS5LM/models`, to `/data/homebrew/PPSA99581/models`, or to `PS5LM/models` on a USB drive (exFAT) or the M.2 drive.
 4. Choose the model in the library. Once the dashboard says Ready, open `http://<console IP>:8081` on a phone or computer.
 
 To update, close the app and copy the new `PPSA99581` folder over the old one. Settings, models and downloads stay in `/data/PS5LM`.
+
+A title sees only its own folder unless the HEN opens the console's storage to it. On the console
+PS5LM is developed on, etaHEN 2.5B does so before the title starts. OnionHEN does so on request:
+PS5LM asks when it starts (`/download0/etahen_jailbreak`), which OnionHEN honours for a title on
+its app jailbreak allowlist, so add `PPSA99581` to `app_jailbreak.exact_title_ids` in
+`/data/OnionHEN/config.ini`. Without storage, the app still runs: it keeps its settings and log in
+its own `/download0` (over FTP: `/mnt/sandbox/PPSA99581_000/download0/PS5LM/app.log`), and loads
+the models it finds in `/data/homebrew/PPSA99581/models`; it cannot download to internal storage
+or see USB drives.
 
 Which models fit is in [docs/MODELS.md](docs/MODELS.md); anything llama.cpp runs works if the library shows LOAD.
 

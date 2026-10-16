@@ -7,6 +7,17 @@ v0.1.x are the upstream payload releases by cobanov.
 
 ## [Unreleased]
 
+### Fixed
+- Storage on consoles whose HEN does not open `/data` to the title on its own (OnionHEN;
+  cobanov/PS5LM#16). The app now asks when it starts, in every process (the restart for a model
+  starts a new one), by writing `{"PID":n}` to `/download0/etahen_jailbreak`, which OnionHEN
+  honours for a title on its app jailbreak allowlist. When `/data` stays closed the app keeps its
+  state and log in its own `/download0` (`/mnt/sandbox/PPSA99581_000/download0/PS5LM` over FTP)
+  instead of starting without them, and says so on the TV; it waits 10 s for the HEN the first
+  time and 2 s after a refusal. Models in the title's own folder,
+  `/data/homebrew/PPSA99581/models`, are found with or without the HEN's help.
+- `/data/PS5LM` is created when missing, not only `models` under it.
+
 ## [0.8.3] - 2026-10-13
 
 ### Changed
