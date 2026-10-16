@@ -53,12 +53,13 @@ class Dashboard {
         busy_text_ = std::move(text);
     }
     bool busy() const { return !busy_title_.empty(); }
-    // The first start without /data: set up the HEN and come back, or go on
-    // in the app's own space (`room`, from param.json). Over everything until
-    // answered, with storage_hen or storage_app.
-    void ask_storage(std::string title_id, std::string room) {
+    // The first start without /data: get full storage and come back, or go
+    // on in the app's own space (`room`, from param.json). Over everything
+    // until answered, with storage_hen or storage_app.
+    void ask_storage(std::string title_id, std::string room, std::string firmware) {
         storage_title_ = std::move(title_id);
         storage_room_ = std::move(room);
+        storage_firmware_ = std::move(firmware);
         storage_open_ = true;
     }
     void open_library();  // over the dashboard, cursor on the loaded model
@@ -128,7 +129,7 @@ class Dashboard {
     void draw_busy(hui::gfx::DrawList & list) const;
     bool  storage_open_ = false;
     int   storage_choice_ = 0;     // 0 the HEN, 1 the app's own space
-    std::string storage_title_, storage_room_;
+    std::string storage_title_, storage_room_, storage_firmware_;
     void draw_storage(hui::gfx::DrawList & list) const;
     void update_storage(const hui::InputFrame & input, hui::ui::Feedback & feedback);
     int   focus_ = 0;

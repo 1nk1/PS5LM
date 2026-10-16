@@ -88,18 +88,20 @@ ps5-exporter comes inside the app; you do not load it yourself.
 
 To update, close the app and copy the new `PPSA99581` folder over the old one. Settings, models and downloads stay in `/data/PS5LM`.
 
-A title sees only its own folder unless the HEN opens the console's storage to it. On the console
-PS5LM is developed on, etaHEN 2.5B does so before the title starts. OnionHEN does so on request:
-PS5LM asks when it starts (`/download0/etahen_jailbreak`), which OnionHEN honours for a title on
-its app jailbreak allowlist, so add `PPSA99581` to `app_jailbreak.exact_title_ids` in
-`/data/OnionHEN/config.ini`.
+A title sees only its own folder unless something opens the console's storage to it. On the console
+PS5LM is developed on (13.00), ShadowMountPlus v1.7-beta5fix1 does so before the title starts, with
+or without a HEN: its `debug.log` shows `[FAKELIB] directory mounted for PPSA99581: /data` (and
+`/mnt/usb0`). OnionHEN does so on request: PS5LM asks when it starts
+(`/download0/etahen_jailbreak`), which OnionHEN honours for a title on its app jailbreak allowlist,
+so add `PPSA99581` to `app_jailbreak.exact_title_ids` in `/data/OnionHEN/config.ini`.
 
-When storage stays closed, the first start asks which way to go: set up the HEN and open the app
-again, or go on without it. Without it, settings, the log and downloads stay in the app's own space,
+When storage stays closed, the first start says so, with the firmware, and asks which way to go:
+get full storage (a current ShadowMountPlus, or the OnionHEN allowlist) and open the app again, or
+go on in the app's own space. Then settings, the log and downloads stay in the app's own space,
 `/download0` (over FTP: `/mnt/sandbox/PPSA99581_000/download0/PS5LM`), whose size is
 `downloadDataSize` in `sce_sys/param.json`; models copied to `/data/homebrew/PPSA99581/models`
 load too. USB and M.2 drives stay out of reach. An update that raises `downloadDataSize` grows the
-space at the next start and keeps what is in it; lowering it frees nothing (tested on 13.60).
+space at the next start and keeps what is in it; lowering it frees nothing (tested on 13.00).
 Uninstalling the app deletes the models in both places, so update by copying the new folder over
 the old one.
 

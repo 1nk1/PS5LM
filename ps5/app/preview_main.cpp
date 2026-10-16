@@ -369,7 +369,7 @@ int main(int argc, char ** argv) {
     step(20, press(hui::Action::back), false);
     shot("17-busy");
     dash.set_busy("");
-    dash.ask_storage("PPSA99581", "2 GiB");
+    dash.ask_storage("PPSA99581", "16 GiB", "12.70");
     step(30, nav(hui::Direction::none), false);
     shot("18-storage");
     step(30, nav(hui::Direction::down), false);

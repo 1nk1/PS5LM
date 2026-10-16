@@ -16,8 +16,10 @@ v0.1.x are the upstream payload releases by cobanov.
   instead of starting without them; it waits 10 s for the HEN the first time and 2 s after a
   refusal. Models in the title's own folder, `/data/homebrew/PPSA99581/models`, are found with or
   without the HEN's help.
-- A first-start choice when `/data` stays closed: set up the HEN and come back (the app closes;
-  the choice returns until storage opens), or go on in the app's own space. Without the HEN,
+- A first-start choice when `/data` stays closed, with the firmware shown (and logged at every
+  start): get full storage and come back, through a current ShadowMountPlus (v1.7-beta5fix1 mounts
+  `/data` and `/mnt/usb0` into homebrew titles itself) or the OnionHEN allowlist (the app closes;
+  the choice returns until storage opens), or go on in the app's own space. On that route,
   downloads go to `/download0/PS5LM/models`, shown as **App storage** with its real size and free
   space (ps5-exporter lists the download data image as `/mnt/sandbox/download/<title>`), so a
   download that does not fit is refused before it starts. Title-folder models are listed as

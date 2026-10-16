@@ -257,11 +257,13 @@ void notify(const char * text) {
     sceKernelSendNotificationRequest(0, &request, sizeof(request), 0);
 }
 
-// A title sees only its own /app0 and /download0; /data is the HEN's to open.
-// etaHEN 2.5B opened it before the title started on the console this was
-// built on (its own request allowlist is fixed, without PS5LM). OnionHEN
-// opens it on request: {"PID":n} in /download0/etahen_jailbreak, for a title
-// on its allowlist (#16). Every process asks, since the restart for a model
+// A title sees only its own /app0 and /download0; /data has to be opened to
+// it. On the console this was built on (13.00), ShadowMountPlus
+// v1.7-beta5fix1 mounts /data and /mnt/usb0 into the title's sandbox before
+// it starts, HEN or not ("[FAKELIB] directory mounted" in its debug.log).
+// OnionHEN opens it on request: {"PID":n} in /download0/etahen_jailbreak, for
+// a title on its allowlist (#16); etaHEN's request allowlist is fixed,
+// without PS5LM. Every process asks, since the restart for a model
 // (LoadExec) starts a new one, sandboxed again. Open means the models folder
 // lists, which the scan needs: ShadowMountPlus can mount /data so that files
 // open but folders do not list.
@@ -281,6 +283,19 @@ bool data_open() {
     close(fd);
     unlink("/data/PS5LM/.probe");
     return ok;
+}
+
+// The firmware as the system names it, or empty.
+std::string firmware() {
+    ps5_kernel_sw_version v = {};
+    v.size = sizeof(v);
+    if (sceKernelGetSystemSwVersion(&v) != 0) {
+        return {};
+    }
+    v.text[sizeof(v.text) - 1] = '\0';
+    std::string s = v.text;
+    s.erase(0, s.find_first_not_of(' '));
+    return s;
 }
 
 // How /data ended up, for the log. A refusal is remembered in /download0:
@@ -647,6 +662,7 @@ int main(int, char **) {
         setvbuf(stderr, nullptr, _IONBF, 0);
     }
     std::printf("ps5lm-app: version " PS5LM_VERSION "\n");
+    std::printf("ps5lm-app: firmware %s\n", firmware().c_str());
     std::printf("ps5lm-app: /data %s; the app's folder is %s\n", data.c_str(), kDir.c_str());
     // One device-local heap over the whole pool (RADV splits an APU's 2/3 to
     // 1/3), and a HOME for llama.cpp, which throws without one.
@@ -756,8 +772,8 @@ int main(int, char **) {
     dash.set_settings(models.settings);
     if (sandboxed && read_lines(kStorageChoice).empty()) {
         const long mib = std::strtol(param_field("downloadDataSize").c_str(), nullptr, 10);
-        dash.ask_storage(param_field("titleId"), mib >= 1024 ? std::to_string(mib / 1024) + " GiB"
-                                                             : std::to_string(mib) + " MiB");
+        dash.ask_storage(param_field("titleId"),
+                         mib >= 1024 ? std::to_string(mib / 1024) + " GiB" : std::to_string(mib) + " MiB", firmware());
     }
     bool      library_shown = false;  // opened once at launch when no model is loaded
     bool      scratch_warned = false;

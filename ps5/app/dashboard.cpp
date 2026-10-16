@@ -2069,7 +2069,7 @@ void Dashboard::update_storage(const hui::InputFrame & input, ui::Feedback & fee
         }
     } else if (input.is_pressed(Action::confirm)) {
         storage_open_ = false;
-        request_ = { storage_choice_ == 0 ? Request::storage_hen : Request::storage_app };
+        request_ = { storage_choice_ == 0 ? Request::storage_hen : Request::storage_app, "" };
         feedback.play(hui::audio::Cue::select);
     }
 }
@@ -2084,15 +2084,17 @@ void Dashboard::draw_storage(gfx::DrawList & list) const {
     const float x = d.x + 56, w = d.w - 112;
     caps(list, f, "STORAGE", x, d.y + 64, 17, kAmber);
     ui::text(list, f.semibold, "PS5LM Plus cannot reach this console's storage", x, d.y + 112, 34, kInk);
-    ui::text(list, f.regular, "The HEN has not opened /data to the app. Choose how to go on.", x, d.y + 150, 21,
-             kInk.with_alpha(kMuted));
+    const std::string why = "Nothing on this console opened /data to the app" +
+                            (storage_firmware_.empty() ? std::string() : " (firmware " + storage_firmware_ + ")") +
+                            ". Choose how to go on.";
+    ui::text(list, f.regular, why, x, d.y + 150, 21, kInk.with_alpha(kMuted));
     const std::string tid = storage_title_;
     const std::string options[2][4] = {
-        { "Set up the HEN, then open PS5LM Plus again",
+        { "Get full storage, then open PS5LM Plus again",
           "Full access: internal storage, USB and M.2 drives, and downloads to any of them.",
-          "OnionHEN: add " + tid + " to app_jailbreak.exact_title_ids in /data/OnionHEN/config.ini.",
-          "etaHEN opens storage on its own. Cross closes the app; this screen returns until storage opens." },
-        { "Go on without the HEN",
+          "ShadowMountPlus v1.7-beta5fix1 opens /data and USB to homebrew itself: update an older one.",
+          "Or with OnionHEN, add " + tid + " to app_jailbreak.exact_title_ids in /data/OnionHEN/config.ini." },
+        { "Go on with the app's own space",
           "Settings and downloads stay in the app's own space, " + storage_room_ + ", set by downloadDataSize.",
           "Models copied over FTP to /data/homebrew/" + tid + "/models load too.",
           "No USB or M.2 drives. Uninstalling the app deletes the models in both; update by copying over it." },
@@ -2108,7 +2110,10 @@ void Dashboard::draw_storage(gfx::DrawList & list) const {
                      kInk.with_alpha(on ? 0.88f : kMuted));
         }
     }
-    ui::text(list, f.regular, "Up and down to choose, Cross to confirm", x, d.y + d.h - 34, 20, kInk.with_alpha(kMuted));
+    ui::text(list, f.regular,
+             storage_choice_ == 0 ? "Up and down to choose. Cross closes the app; this returns until storage opens."
+                                  : "Up and down to choose. Cross goes on, and the app remembers it.",
+             x, d.y + d.h - 34, 20, kInk.with_alpha(kMuted));
 }
 
 }  // namespace ps5lm
