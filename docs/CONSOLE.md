@@ -88,6 +88,8 @@ PS5LM's app (`ps5/app`, PPSA99581) is a title, not a payload: it gets the consol
 | Prompt | 35 to 50 tok/s |
 | Generation | 21 tok/s on a short prompt, 9 tok/s after the web UI's 371-token prompt |
 
+Where the rest of the 12 GiB goes: the app saw 11.38 GiB free at start, while PS5_Vulkan's runner, with the same pool and the same direct-memory heap, saw 12,882,739,200 bytes free and mapped all but 2 MiB of it (its jobs/r87-gpu-ceiling). The difference was `param.json`: PS5LM had ProsperoAI's `amm` block (256 MiB of page tables) and `kernel` block (256 MiB each for CPU and GPU page tables), which PS5_Vulkan's title does not set and nothing in PS5LM uses. Both are gone; the start log's `pool free` should now read about 11.9 GiB. Not yet checked on the console. If mappings fail without them, they were needed after all.
+
 What a title has to do differently from a payload, each found by a crash:
 
 - **Never exit.** `exit()` and `_Exit` end in SIGSYS; the title waits for the shell to close it, as ps5-native-app-boilerplate's examples do. It hides the splash screen itself and posts notifications to show its state.
