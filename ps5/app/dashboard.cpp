@@ -1185,7 +1185,7 @@ void Dashboard::draw_library(gfx::DrawList & list, std::uint32_t glass) const {
     caps(list, f, "MODEL LIBRARY", panel.x + 56, panel.y + 60, 20, kLime);
     ui::text(list, f.regular,
              f.regular.font->fit(settings_.download_dir.rfind("/download0", 0) == 0
-                                     ? "Settings fit the memory free now. Models go in the app's own space, or models/ in its folder under /data/homebrew."
+                                     ? "Settings fit the memory free now. Models go in the app's own space, or in its homebrew folder."
                                      : "Settings fit the memory free now. Models go in /data/PS5LM/models, or PS5LM/models on USB.",
                                  20, panel.w - 112),
              panel.x + 56, panel.y + 98, 20, kInk.with_alpha(kMuted));
