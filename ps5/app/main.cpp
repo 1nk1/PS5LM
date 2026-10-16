@@ -107,6 +107,10 @@ constexpr int          kPort        = 8081;
 // its own /download0 (a 256 MiB image: room for the state, not for models).
 std::string kDir, kLog, kArgs, kChoice, kQuit, kSettings, kScratch, kLlamaLog, kModels;
 std::vector<std::string> kModelDirs;
+const std::string kStorageModels = "/download0/PS5LM/models";
+// "app" once the user chose to go on without the HEN (the startup prompt).
+constexpr const char * kStorageChoice = "/download0/PS5LM/storage.txt";
+std::vector<std::string> read_lines(const char * path);
 
 void set_dir(const std::string & dir) {
     kDir      = dir;
@@ -122,6 +126,24 @@ void set_dir(const std::string & dir) {
     // over FTP): a sandboxed title reads it without any HEN.
     kModelDirs = { kModels, "/app0/models", "/mnt/ext0/PS5LM/models", "/mnt/usb0/PS5LM/models",
                    "/mnt/usb1/PS5LM/models", "/mnt/usb0", "/mnt/usb1" };
+    if (kModels != kStorageModels) {
+        kModelDirs.push_back(kStorageModels);  // downloaded there before the HEN opened /data
+    }
+}
+
+// A field of /app0/sce_sys/param.json, crudely: the title's own file, one
+// field a line.
+std::string param_field(const std::string & key) {
+    for (const auto & line : read_lines("/app0/sce_sys/param.json")) {
+        const size_t at = line.find("\"" + key + "\"");
+        if (at == std::string::npos) {
+            continue;
+        }
+        std::string v = line.substr(line.find(':', at) + 1);
+        std::erase_if(v, [](char c) { return c == ' ' || c == '"' || c == ','; });
+        return v;
+    }
+    return {};
 }
 
 // The last lines of a log, up to about 64 KiB of it, oldest first.
@@ -265,17 +287,19 @@ bool data_open() {
 // the next starts (one per model change) still ask, but wait 2 s, not 10.
 std::string open_data() {
     constexpr const char * kRefused = "/download0/PS5LM/data-closed";
-    if (data_open()) {
+    if (access("/data/PS5LM/sandbox-test", F_OK) != 0 && data_open()) {
         unlink(kRefused);
         return "open";
     }
     const int err = errno;
     const bool again = access(kRefused, F_OK) == 0;
+    // ponytail: a flag file to walk the sandboxed route on a console whose HEN opens /data
+    const bool test = access("/data/PS5LM/sandbox-test", F_OK) == 0;
     std::ofstream("/download0/etahen_jailbreak.tmp") << "{\"PID\":" << getpid() << "}\n";
     rename("/download0/etahen_jailbreak.tmp", "/download0/etahen_jailbreak");
     for (int i = 1; i <= (again ? 8 : 40); i++) {  // OnionHEN answered in about 3 s (#16)
         sceKernelUsleep(250000);
-        if (data_open()) {
+        if (!test && data_open()) {
             unlink(kRefused);
             return "opened by the HEN after " + std::to_string(i / 4.0).substr(0, 4) + " s";
         }
@@ -624,10 +648,6 @@ int main(int, char **) {
     }
     std::printf("ps5lm-app: version " PS5LM_VERSION "\n");
     std::printf("ps5lm-app: /data %s; the app's folder is %s\n", data.c_str(), kDir.c_str());
-    if (kDir != "/data/PS5LM") {
-        notify("PS5LM: no access to /data. Copy .gguf files to models/ in the app's folder under /data/homebrew, "
-               "or add this title to the HEN's app jailbreak allowlist");
-    }
     // One device-local heap over the whole pool (RADV splits an APU's 2/3 to
     // 1/3), and a HOME for llama.cpp, which throws without one.
     setenv("radv_enable_unified_heap_on_apu", "true", 1);
@@ -665,9 +685,16 @@ int main(int, char **) {
         }
     }
 
+    models.settings = load_settings(kSettings.c_str());
+    const bool sandboxed = kDir != "/data/PS5LM";
+    if (sandboxed) {
+        set_internal_drive("App storage", kModels, "/mnt/sandbox/download/" + param_field("titleId"));
+        if (models.settings.download_dir.rfind("/data/", 0) == 0) {
+            models.settings.download_dir = kModels;  // the only place a sandboxed title can write
+        }
+    }
     StatsCollector stats;
     stats.start(kPort);
-    models.settings = load_settings(kSettings.c_str());
     models.scan(stats);
 
     // Which model: app-args.txt verbatim, else model.txt, which the library
@@ -727,6 +754,11 @@ int main(int, char **) {
     market.start(models.budget_gib);
     int  saved_seen = 0;  // downloads finished, as last seen
     dash.set_settings(models.settings);
+    if (sandboxed && read_lines(kStorageChoice).empty()) {
+        const long mib = std::strtol(param_field("downloadDataSize").c_str(), nullptr, 10);
+        dash.ask_storage(param_field("titleId"), mib >= 1024 ? std::to_string(mib / 1024) + " GiB"
+                                                             : std::to_string(mib) + " MiB");
+    }
     bool      library_shown = false;  // opened once at launch when no model is loaded
     bool      scratch_warned = false;
     // Downloads left queued or running carry on, on their own page.
@@ -929,6 +961,13 @@ int main(int, char **) {
             } else if (std::string q = take_request_file((kDir + "/search").c_str()); !q.empty()) {
                 market.search(q == "-" ? std::string() : q);  // a query typed on the PC
             }
+        }
+        if (req.kind == Dashboard::Request::storage_app) {
+            std::ofstream(kStorageChoice) << "app\n";
+        } else if (req.kind == Dashboard::Request::storage_hen) {
+            // Closed, for the HEN to be set up; the next start asks again.
+            std::fflush(nullptr);
+            sceSystemServiceLoadExec("exit", nullptr);
         }
         if (req.kind == Dashboard::Request::unload || req.kind == Dashboard::Request::load) {
             // Unloading in place leaves part of the model's GPU memory held

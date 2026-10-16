@@ -368,5 +368,11 @@ int main(int argc, char ** argv) {
     dash.set_busy("Applying the new limits", "Planning every model again for 32k tokens and the q8_0 cache");
     step(20, press(hui::Action::back), false);
     shot("17-busy");
+    dash.set_busy("");
+    dash.ask_storage("PPSA99581", "2 GiB");
+    step(30, nav(hui::Direction::none), false);
+    shot("18-storage");
+    step(30, nav(hui::Direction::down), false);
+    shot("19-storage-app");
     return ok ? 0 : 1;
 }

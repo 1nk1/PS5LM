@@ -53,6 +53,14 @@ class Dashboard {
         busy_text_ = std::move(text);
     }
     bool busy() const { return !busy_title_.empty(); }
+    // The first start without /data: set up the HEN and come back, or go on
+    // in the app's own space (`room`, from param.json). Over everything until
+    // answered, with storage_hen or storage_app.
+    void ask_storage(std::string title_id, std::string room) {
+        storage_title_ = std::move(title_id);
+        storage_room_ = std::move(room);
+        storage_open_ = true;
+    }
     void open_library();  // over the dashboard, cursor on the loaded model
     void set_settings(const Settings & s) { settings_ = s; }
     const Settings & settings() const { return settings_; }
@@ -75,7 +83,8 @@ class Dashboard {
     // changed (read them with settings()).
     struct Request {
         enum Kind { none, load, unload, settings, clear_scratch, market_search, market_open, market_plan, market_download,
-                    market_download_unload, download_pause, download_resume, download_remove } kind = none;
+                    market_download_unload, download_pause, download_resume, download_remove, storage_hen,
+                    storage_app } kind = none;
         std::string path;   // a model, a market query, or the folder a download goes to (empty: the setting)
         int repo = -1, file = -1;  // a market file, or (repo) a download's index
     };
@@ -117,6 +126,11 @@ class Dashboard {
     float clock_ = 0;  // idle motion
     std::string busy_title_, busy_text_;
     void draw_busy(hui::gfx::DrawList & list) const;
+    bool  storage_open_ = false;
+    int   storage_choice_ = 0;     // 0 the HEN, 1 the app's own space
+    std::string storage_title_, storage_room_;
+    void draw_storage(hui::gfx::DrawList & list) const;
+    void update_storage(const hui::InputFrame & input, hui::ui::Feedback & feedback);
     int   focus_ = 0;
     int   came_from_ = -1;
     hui::Direction came_by_ = hui::Direction::none;

@@ -13,9 +13,15 @@ v0.1.x are the upstream payload releases by cobanov.
   starts a new one), by writing `{"PID":n}` to `/download0/etahen_jailbreak`, which OnionHEN
   honours for a title on its app jailbreak allowlist. When `/data` stays closed the app keeps its
   state and log in its own `/download0` (`/mnt/sandbox/PPSA99581_000/download0/PS5LM` over FTP)
-  instead of starting without them, and says so on the TV; it waits 10 s for the HEN the first
-  time and 2 s after a refusal. Models in the title's own folder,
-  `/data/homebrew/PPSA99581/models`, are found with or without the HEN's help.
+  instead of starting without them; it waits 10 s for the HEN the first time and 2 s after a
+  refusal. Models in the title's own folder, `/data/homebrew/PPSA99581/models`, are found with or
+  without the HEN's help.
+- A first-start choice when `/data` stays closed: set up the HEN and come back (the app closes;
+  the choice returns until storage opens), or go on in the app's own space. Without the HEN,
+  downloads go to `/download0/PS5LM/models`, shown as **App storage** with its real size and free
+  space (ps5-exporter lists the download data image as `/mnt/sandbox/download/<title>`), so a
+  download that does not fit is refused before it starts. Title-folder models are listed as
+  **App folder**.
 - `/data/PS5LM` is created when missing, not only `models` under it.
 
 ## [0.8.3] - 2026-10-13

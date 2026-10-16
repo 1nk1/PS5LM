@@ -61,11 +61,21 @@ void space(const char * path, double * free, double * total) {
 
 }  // namespace
 
+namespace {
+std::string internal_name = "Internal storage", internal_models = "/data/PS5LM/models", internal_mount = "/user";
+}
+
+void set_internal_drive(std::string name, std::string models, std::string mount) {
+    internal_name = std::move(name);
+    internal_models = std::move(models);
+    internal_mount = std::move(mount);
+}
+
 // A title's statvfs is a stub (the same 64 GiB for every path) and statfs is
 // not exported to titles, so the space comes from ps5-exporter, a payload.
 // /data is /user/data. Without the exporter the space is unknown (total 0).
 std::vector<Drive> drives_from_metrics(const std::string & text) {
-    std::vector<Drive> out = { { "Internal storage", "/data/PS5LM/models" } };
+    std::vector<Drive> out = { { internal_name, internal_models } };
     const std::string key = "ps5_filesystem_size_bytes{mountpoint=\"";
     for (size_t at = text.find(key); at != std::string::npos; at = text.find(key, at + 1)) {
         const size_t from = at + key.size();
@@ -74,7 +84,7 @@ std::vector<Drive> drives_from_metrics(const std::string & text) {
         const std::string labels = text.substr(brace, text.find('}', from) + 1 - brace);  // {mountpoint=...,fstype=...}
         const double total = sample(text, "ps5_filesystem_size_bytes" + labels, 0) / kGiB;
         const double free = sample(text, "ps5_filesystem_avail_bytes" + labels, 0) / kGiB;
-        if (mount == "/user") {
+        if (mount == internal_mount) {
             out[0].free = free;
             out[0].total = total;
         } else if ((mount.rfind("/mnt/ext", 0) == 0 || mount.rfind("/mnt/usb", 0) == 0) && total >= 1.0) {
@@ -88,7 +98,11 @@ std::vector<Drive> drives_from_metrics(const std::string & text) {
 std::vector<Drive> mounted_drives() { return drives_from_metrics(http_get(9100, "/metrics", 2)); }
 
 std::string drive_name(const std::string & path) {
-    return path.rfind("/mnt/ext", 0) == 0 ? "M.2 drive" : path.rfind("/mnt/usb", 0) == 0 ? "USB drive" : "Internal storage";
+    return path.rfind("/mnt/ext", 0) == 0    ? "M.2 drive"
+           : path.rfind("/mnt/usb", 0) == 0  ? "USB drive"
+           : path.rfind("/app0", 0) == 0     ? "App folder"
+           : path.rfind("/download0", 0) == 0 ? "App storage"
+                                              : "Internal storage";
 }
 
 namespace {

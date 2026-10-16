@@ -92,10 +92,14 @@ A title sees only its own folder unless the HEN opens the console's storage to i
 PS5LM is developed on, etaHEN 2.5B does so before the title starts. OnionHEN does so on request:
 PS5LM asks when it starts (`/download0/etahen_jailbreak`), which OnionHEN honours for a title on
 its app jailbreak allowlist, so add `PPSA99581` to `app_jailbreak.exact_title_ids` in
-`/data/OnionHEN/config.ini`. Without storage, the app still runs: it keeps its settings and log in
-its own `/download0` (over FTP: `/mnt/sandbox/PPSA99581_000/download0/PS5LM/app.log`), and loads
-the models it finds in `/data/homebrew/PPSA99581/models`; it cannot download to internal storage
-or see USB drives.
+`/data/OnionHEN/config.ini`.
+
+When storage stays closed, the first start asks which way to go: set up the HEN and open the app
+again, or go on without it. Without it, settings, the log and downloads stay in the app's own space,
+`/download0` (over FTP: `/mnt/sandbox/PPSA99581_000/download0/PS5LM`), whose size is
+`downloadDataSize` in `sce_sys/param.json`; models copied to `/data/homebrew/PPSA99581/models`
+load too. USB and M.2 drives stay out of reach. Uninstalling the app deletes the models in both
+places, so update by copying the new folder over the old one.
 
 Which models fit is in [docs/MODELS.md](docs/MODELS.md); anything llama.cpp runs works if the library shows LOAD.
 
