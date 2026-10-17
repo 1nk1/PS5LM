@@ -11,5 +11,4 @@ and bumps the version in `ps5/app/version.hpp` with a CHANGELOG entry.
 | 3 | `feature/chat-tools` | [Chat tools](chat-tools.md): tools, files, images in the browser chat; a scratch folder with a size warning | 0.6.0 (released) |
 | 4 | `feature/model-market` | [Model market](model-market.md): search and download from Hugging Face, with fit shown | 0.6.0 (released) |
 
-`main` is this fork's integration branch. Upstream pull requests go from a
-branch cut from `cobanov/PS5LM:main` with only the commits meant for it.
+`main` is the integration branch.

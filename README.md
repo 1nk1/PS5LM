@@ -4,7 +4,7 @@
 
 **llama.cpp on a jailbroken PlayStation 5, on its GPU.** A native app that runs GGUF language models on the console itself, with a dashboard on the TV, a model store, and a chat and OpenAI-compatible API for every device on your network.
 
-> **This is a fork.** PS5LM was created by **[Mert Cobanov](https://github.com/cobanov)** ([cobanov/PS5LM](https://github.com/cobanov/PS5LM), [ps5lm.cobanov.dev](https://ps5lm.cobanov.dev)): the llama.cpp port, the payload, its model library and the research all come from there. This fork, by me, adds the **native GPU app**, named PS5LM Plus to tell it apart from the original, offered back upstream in [cobanov/PS5LM#12](https://github.com/cobanov/PS5LM/pull/12). The original payload's README is kept in [docs/PAYLOAD.md](docs/PAYLOAD.md).
+> PS5LM Plus started as a fork of **PS5LM** by **[Mert Cobanov](https://github.com/cobanov)** ([cobanov/PS5LM](https://github.com/cobanov/PS5LM)): the llama.cpp port to the PS5, the payload and the early research come from there, and the project stays GPL-3.0 like the original. Since then it has grown separately around the native GPU app. The original payload's README is kept in [docs/PAYLOAD.md](docs/PAYLOAD.md).
 
 <p align="center">
   <img src="docs/media/app/dashboard-generating.jpg" width="820" alt="The PS5LM Plus dashboard on the TV while Qwen 3.8 27B generates at 20.9 tok/s">
@@ -81,7 +81,7 @@ ps5-exporter comes inside the app; you do not load it yourself.
 
 ## Install
 
-1. Download `ps5lm-app-vX.Y.Z.zip` from this fork's [releases](https://github.com/abhi245y/PS5LM/releases) and check it against its `.sha256`.
+1. Download `ps5lm-app-vX.Y.Z.zip` from the [releases](https://github.com/abhi245y/PS5LM-Plus/releases) and check it against its `.sha256`.
 2. Unzip it and copy the `PPSA99581` folder to `/data/homebrew/PPSA99581` over FTP. ShadowMountPlus adds **PS5LM Plus** to the home screen.
 3. Start PS5LM. Pick a model in **Get models**, or copy a `.gguf` to `/data/PS5LM/models`, to `/data/homebrew/PPSA99581/models`, or to `PS5LM/models` on a USB drive (exFAT) or the M.2 drive.
 4. Choose the model in the library. Once the dashboard says Ready, open `http://<console IP>:8081` on a phone or computer.
@@ -154,7 +154,7 @@ The full notes are in [docs/CONSOLE.md](docs/CONSOLE.md). In short:
 The app links llama.cpp with ggml-vulkan against [PS5_Vulkan](https://github.com/mihawk-99/PS5_Vulkan)'s RADV build. Set up PS5_Vulkan and its forks in `.deps/src` (`PS5_Vulkan`, `PS5_Mesa` and `PS5_PayloadSDK` at the revisions PS5_Vulkan pins), then:
 
 ```sh
-git clone --recursive https://github.com/abhi245y/PS5LM
+git clone --recursive https://github.com/abhi245y/PS5LM-Plus
 cd PS5LM
 (cd .deps/src/PS5_Vulkan && tools/setup-native-dependencies.sh && tools/build-radv.sh release && make app)
 scripts/build-app.sh             # build/app-ps5/title/PPSA99581
@@ -184,9 +184,8 @@ The app closes itself on request (`/data/PS5LM/quit`), so nothing is killed whil
 
 ## Versions and branches
 
-- Releases follow [semver](https://semver.org): tags `vX.Y.Z`, notes in [CHANGELOG.md](CHANGELOG.md), version set in `ps5/app/version.hpp` and shown on the dashboard. v0.1.x are upstream's payload releases.
-- `main` is this fork's integration branch. Each feature is built on its own branch (`feature/...`, `docs/...`) and merged into `main`.
-- `native-gpu-app` is the branch of the upstream pull request.
+- Releases follow [semver](https://semver.org): tags `vX.Y.Z`, notes in [CHANGELOG.md](CHANGELOG.md), version set in `ps5/app/version.hpp` and shown on the dashboard. v0.1.x are the original PS5LM payload releases, by Mert Cobanov.
+- `main` is the integration branch. Each feature is built on its own branch (`feature/...`, `docs/...`, `research/...`) and merged into `main`.
 
 ## Why llama.cpp
 
@@ -194,7 +193,7 @@ Earlier PS5 LLM work hand-writes GPU kernels for one model at a time. PS5LM port
 
 ## Credits
 
-- **[Mert Cobanov](https://github.com/cobanov)**, who created PS5LM ([cobanov/PS5LM](https://github.com/cobanov/PS5LM)): the llama.cpp port to the PS5, the payload and its library, the build scripts and the research this fork builds on.
+- **[Mert Cobanov](https://github.com/cobanov)**, who created PS5LM ([cobanov/PS5LM](https://github.com/cobanov/PS5LM)): the llama.cpp port to the PS5, the payload and its library, the build scripts and the research PS5LM Plus started from.
 - [llama.cpp / ggml](https://github.com/ggml-org/llama.cpp), which does the actual work.
 - [PS5_Vulkan](https://github.com/mihawk-99/PS5_Vulkan) (Mihawk-99) for RADV on the PS5, and [ps5-homebrew-ui](https://github.com/blackbearreloaded/ps5-homebrew-ui), [ps5-opengl](https://github.com/blackbearreloaded/ps5-opengl) and ps5-homebrew-dev-protocol (BlackBearReloaded) for the app's screen and tooling.
 - [ps5-exporter](https://github.com/Marice/ps5-exporter) (Marice) for the sensors and drive space the app shows.

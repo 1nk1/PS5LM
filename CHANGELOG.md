@@ -3,11 +3,14 @@
 Versions follow [semver](https://semver.org). The app's version is set in
 `ps5/app/version.hpp` and shown on the dashboard; each release is tagged
 `v<version>` and ships `ps5lm-app-v<version>.zip` (see `scripts/release-app.sh`).
-v0.1.x are the upstream payload releases by cobanov.
+v0.1.x are the original PS5LM payload releases by Mert Cobanov.
 
 ## [Unreleased]
 
 ### Changed
+- PS5LM Plus is its own project now, at `abhi245y/PS5LM-Plus`, no longer a fork waiting to be
+  merged into cobanov/PS5LM. It keeps the original PS5LM history and credits Mert Cobanov for the
+  llama.cpp port, the payload and the early research; it stays GPL-3.0.
 - About 0.57 GiB more memory for models: 11.58 GiB free before loading,
   from 11.01. `sce_sys/param.json` no longer has the `amm` and `kernel`
   page-table blocks copied from ProsperoAI; their 768 MiB came out of the
