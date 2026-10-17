@@ -325,6 +325,105 @@ std::string open_data() {
     return std::string("closed (") + strerror(err) + "), the HEN did not open it";
 }
 
+// The last `bytes` of a file, from a line start, or empty.
+std::string file_tail(const std::string & path, long bytes) {
+    std::ifstream in(path, std::ios::binary | std::ios::ate);
+    if (!in) {
+        return {};
+    }
+    const long size = (long) in.tellg();
+    const long from = std::max(0L, size - bytes);
+    in.seekg(from);
+    std::string text((size_t) (size - from), '\0');
+    in.read(text.data(), (std::streamsize) text.size());
+    return from > 0 && text.find('\n') != std::string::npos ? text.substr(text.find('\n') + 1) : text;
+}
+
+// A debug report: one text file with what a bug report needs, in the app's
+// folder under debug/, for attaching to an issue (Settings > App > Debug
+// report, or a debug-report request file from the PC). Returns its path, or
+// empty. The logs hold no prompts; settings and downloads hold no tokens.
+std::string write_debug_report(const Live & live, const std::string & data) {
+    char stamp[32];
+    const time_t now = time(nullptr);
+    std::strftime(stamp, sizeof(stamp), "%Y%m%d-%H%M%S", std::localtime(&now));
+    const std::string dir = kDir + "/debug";
+    mkdir(dir.c_str(), 0777);
+    const std::string path = dir + "/ps5lm-debug-" + stamp + ".txt";
+    std::ofstream out(path);
+    if (!out) {
+        return {};
+    }
+    const auto section = [&](const char * name) { out << "\n===== " << name << " =====\n"; };
+    out << "PS5LM Plus debug report, " << stamp << "\n";
+    section("app");
+    out << "version " PS5LM_VERSION "\ntitle " << param_field("titleId") << ", content " << param_field("contentId")
+        << ", downloadDataSize " << param_field("downloadDataSize") << " MiB\n";
+    {
+        uint32_t sdk = 0;
+        size_t   n = sizeof(sdk);
+        sysctlbyname("kern.sdk_version", &sdk, &n, nullptr, 0);
+        char raw[16];
+        std::snprintf(raw, sizeof(raw), "0x%08x", sdk);
+        out << "firmware " << firmware() << " (kern.sdk_version " << raw << ")\n";
+    }
+    const auto choice = read_lines(kStorageChoice);
+    out << "/data " << data << "\napp folder " << kDir << ", storage choice "
+        << (choice.empty() ? "none" : choice[0]) << ", sandbox-test " << (access("/data/PS5LM/sandbox-test", F_OK) == 0 ? "on" : "off")
+        << "\n";
+    {
+        int64_t at = 0;
+        size_t  avail = 0;
+        const int64_t pool = sceKernelGetDirectMemorySize();
+        sceKernelAvailableDirectMemorySize(0, pool, 2 * 1024 * 1024, &at, &avail);
+        char m[96];
+        std::snprintf(m, sizeof(m), "memory: pool %.2f GiB, free %.2f GiB\n", pool / 1073741824.0, avail / 1073741824.0);
+        out << m;
+    }
+    section("payloads (listening on this console)");
+    for (const auto & [port, name] : { std::pair{ 2121, "ftpsrv" }, { 3232, "klogsrv" }, { 9021, "elfldr" },
+                                       { 9100, "ps5-exporter" }, { kPort, "llama-server" } }) {
+        out << port << " " << name << ": " << (port_open(port) ? "open" : "closed") << "\n";
+    }
+    section("server");
+    out << "state " << (int) live.state << ", model " << (live.model_label.empty() ? "none" : live.model_label) << "\n";
+    for (const auto & a : live.args) {
+        out << "  " << a << "\n";
+    }
+    section("drives");
+    for (const auto & d : live.drives) {
+        char t[64];
+        std::snprintf(t, sizeof(t), "%.1f of %.1f GiB free", d.free, d.total);
+        out << d.name << ", " << d.models << ": " << (d.total > 0 ? t : "space unknown") << "\n";
+    }
+    section("models");
+    for (const auto & m : live.models) {
+        out << m.file << " (" << m.drive << "): " << (m.fits ? m.plan : "does not fit") << "\n";
+    }
+    const auto file = [&](const char * name, const std::string & p, long bytes) {
+        section(name);
+        const std::string text = file_tail(p, bytes);
+        out << (text.empty() ? "(missing or unreadable)\n" : text);
+    };
+    file("settings.json", kSettings, 16384);
+    file("downloads.json", kDir + "/downloads.json", 16384);
+    file("app.log (the end)", kLog, 262144);
+    file("llama.log (the end)", kLlamaLog, 262144);
+    // What opens /data on homebrew, when this title can read it.
+    file("ShadowMountPlus debug.log (the end)", "/data/shadowmount/debug.log", 32768);
+    section("OnionHEN app_jailbreak");
+    bool in = false;
+    for (const auto & line : read_lines("/data/OnionHEN/config.ini")) {
+        if (!line.empty() && line[0] == '[') {
+            in = line == "[app_jailbreak]";
+        } else if (in) {
+            out << line << "\n";
+        }
+    }
+    out.close();
+    return out ? path : std::string();
+}
+
 // A quit request from the PC (scripts/ps5lm-app.sh close): the app ends
 // itself the way the system expects; killing a title that is rendering has
 // been followed by lost consoles (ps5-homebrew-ui's AGENTS.md).
@@ -988,6 +1087,8 @@ int main(int, char **) {
                 req = { Dashboard::Request::load, p };
             } else if (!take_request_file((kDir + "/unload").c_str()).empty()) {
                 req = { Dashboard::Request::unload, "" };
+            } else if (!take_request_file((kDir + "/debug-report").c_str()).empty()) {
+                req = { Dashboard::Request::debug_report, "" };
             } else if (std::string u = take_request_file((kDir + "/fetch").c_str()); !u.empty()) {
                 std::thread(probe_fetch, u).detach();
             } else if (!take_request_file((kDir + "/bench-write").c_str()).empty()) {
@@ -995,6 +1096,17 @@ int main(int, char **) {
             } else if (std::string q = take_request_file((kDir + "/search").c_str()); !q.empty()) {
                 market.search(q == "-" ? std::string() : q);  // a query typed on the PC
             }
+        }
+        if (req.kind == Dashboard::Request::debug_report) {
+            const std::string p = write_debug_report(live, data);
+            // Over FTP the app's own space is under its sandbox.
+            const std::string ftp = p.rfind("/download0/", 0) == 0
+                                        ? "/mnt/sandbox/" + param_field("titleId") + "_000" + p
+                                        : p;
+            dash.set_debug_note(p.empty() ? "Could not save it" : "Saved " + p.substr(p.find_last_of('/') + 1));
+            notify(p.empty() ? "PS5LM Plus: the debug report could not be saved"
+                             : ("PS5LM Plus: debug report saved. Over FTP: " + ftp).c_str());
+            std::printf("ps5lm-app: debug report %s\n", p.empty() ? "failed" : ftp.c_str());
         }
         if (req.kind == Dashboard::Request::storage_app) {
             std::ofstream(kStorageChoice) << "app\n";

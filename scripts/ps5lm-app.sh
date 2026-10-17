@@ -75,6 +75,21 @@ screenshot() {
     echo "ps5lm-app: screenshot in ${1:-build/app-ps5/screen.bmp}"
 }
 
+# A debug report from the running app, copied to build/app-ps5/ (or $2).
+debug_report() {
+    request debug-report
+    for _ in $(seq 1 20); do
+        sleep 1
+        curl -sf "$ftp/data/PS5LM/debug-report" -o /dev/null || break
+    done
+    sleep 2
+    local name
+    name=$(curl -s "$ftp/data/PS5LM/debug/" | awk '{print $NF}' | grep '^ps5lm-debug-.*\.txt$' | sort | tail -1)
+    [ -n "$name" ] || { echo "ps5lm-app: no debug report (is the app running?)" >&2; exit 1; }
+    curl -sS "$ftp/data/PS5LM/debug/$name" -o "${2:-build/app-ps5}/$name"
+    echo "ps5lm-app: debug report in ${2:-build/app-ps5}/$name"
+}
+
 case ${1:-} in
     load) request load "${2:?model path on the console}" ;;
     unload) request unload ;;
@@ -83,9 +98,10 @@ case ${1:-} in
     search) request search "${2:?search words}" ;;
     press) request press "${2:?up|down|left|right|cross|circle|triangle|square|l1|r1|l2|r2}" ;;
     screenshot) screenshot "${2:-}" ;;
+    debug-report) debug_report "$@" ;;
     close) close ;;
     deploy) deploy ;;
     launch) launch ;;
     cycle) close; deploy; launch ;;
-    *) echo "usage: $0 close|deploy|launch|cycle|screenshot|load|unload|press|fetch|bench-write|search" >&2; exit 2 ;;
+    *) echo "usage: $0 close|deploy|launch|cycle|screenshot|debug-report|load|unload|press|fetch|bench-write|search" >&2; exit 2 ;;
 esac

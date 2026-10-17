@@ -210,6 +210,22 @@ bool send_payload(const char * path, int port) {
     return ok;
 }
 
+bool port_open(int port) {
+    const int fd = socket(AF_INET, SOCK_STREAM, 0);
+    sockaddr_in to = {};
+#ifdef __FreeBSD__
+    to.sin_len = sizeof(to);
+#endif
+    to.sin_family = AF_INET;
+    to.sin_port   = htons((uint16_t) port);
+    to.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    const bool open = fd >= 0 && connect(fd, (sockaddr *) &to, sizeof(to)) == 0;
+    if (fd >= 0) {
+        close(fd);
+    }
+    return open;
+}
+
 std::string local_address() {
     const int fd = socket(AF_INET, SOCK_DGRAM, 0);
     if (fd < 0) {

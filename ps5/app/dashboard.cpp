@@ -170,7 +170,8 @@ constexpr int          kMarketRows = 9;
 
 // ---- Settings: categories of rows, after the kit's "Control Room" ---------------
 
-enum class Setting : int { auto_load, default_model, ctx_cap, kv_type, sounds, tools, scratch_limit, clear_scratch, download_dir };
+enum class Setting : int { auto_load, default_model, ctx_cap, kv_type, sounds, tools, scratch_limit, clear_scratch, download_dir,
+                           debug_report };
 
 struct SettingRow {
     Setting      id;
@@ -201,8 +202,9 @@ constexpr SettingCategory kCategories[] = {
       3 },
     { "App", "The app itself.",
       { { Setting::sounds, "Sounds", "Interface sounds on the TV." },
-        { Setting::download_dir, "Download to", "Where Get models saves: internal storage, or PS5LM/models on an M.2 or USB drive." } },
-      2 },
+        { Setting::download_dir, "Download to", "Where Get models saves: internal storage, or PS5LM/models on an M.2 or USB drive." },
+        { Setting::debug_report, "Debug report", "For a bug report: saves the logs and the console's state to one file in debug/. Read it before posting." } },
+      3 },
 };
 constexpr int kCategoryCount = 4;
 
@@ -498,6 +500,7 @@ bool step_setting(Settings & s, Setting id, int dir, const std::vector<ModelRow>
         case Setting::sounds: s.sounds = !s.sounds; return true;
         case Setting::tools: s.tools = !s.tools; return true;
         case Setting::clear_scratch: return false;
+        case Setting::debug_report: return false;
         case Setting::download_dir: {
             // Each mounted drive in turn; a missing one counts as before the first.
             int at = -1;
@@ -548,9 +551,9 @@ void Dashboard::update_settings(const hui::InputFrame & input, ui::Feedback & fe
         }
     }
     const Setting id = c.rows[setting_row_].id;
-    if (id == Setting::clear_scratch) {
+    if (id == Setting::clear_scratch || id == Setting::debug_report) {
         if (input.is_pressed(Action::confirm)) {
-            request_ = { Request::clear_scratch, "" };
+            request_ = { id == Setting::clear_scratch ? Request::clear_scratch : Request::debug_report, "" };
             feedback.play(hui::audio::Cue::saved);
         }
         if (input.is_pressed(Action::back)) {
@@ -1571,13 +1574,14 @@ void Dashboard::draw_settings(gfx::DrawList & list) const {
             list.rounded_rect(thumb, 17, on ? kPanelBottom : kInk);
             ui::text(list, f.regular, on ? "On" : "Off", pill.x - 20, row.cy() + 8, 24,
                      kInk.with_alpha(focused ? 0.95f : 0.66f), gfx::Align::right);
-        } else if (sr.id == Setting::clear_scratch) {
-            // An action row: what it would delete, and a chevron.
+        } else if (sr.id == Setting::clear_scratch || sr.id == Setting::debug_report) {
+            // An action row: what it would delete, or the last report, and a chevron.
             char t[48];
             std::snprintf(t, sizeof(t), "%.2f GiB in the folder", live_.scratch_gib);
-            ui::text(list, f.regular, t, right - 34, row.cy() + 8, 24, kInk.with_alpha(focused ? 0.8f : 0.55f),
-                     gfx::Align::right);
-            const Color ink = focused ? kRose : kInk.with_alpha(0.6f);
+            const std::string v = sr.id == Setting::clear_scratch ? std::string(t) : debug_note_;
+            ui::text(list, f.regular, f.regular.font->fit(v, 24, 620), right - 34, row.cy() + 8, 24,
+                     kInk.with_alpha(focused ? 0.8f : 0.55f), gfx::Align::right);
+            const Color ink = focused ? (sr.id == Setting::clear_scratch ? kRose : kCyan) : kInk.with_alpha(0.6f);
             list.line(right - 12, row.cy() - 9, right - 3, row.cy(), 3.0f, ink);
             list.line(right - 12, row.cy() + 9, right - 3, row.cy(), 3.0f, ink);
         } else {
@@ -1931,13 +1935,16 @@ void Dashboard::draw_hints(DashboardFrame & frame) const {
         ui::draw_hints(frame.overlay, fonts_, style, model ? hints : hints + 1, model ? 2 : 1, kGridX + kGridW, true);
     } else if (page_ == 1) {
         const Setting row_id = kCategories[setting_category_].rows[setting_row_].id;
-        const bool toggle = in_rows_ && (is_toggle(row_id) || row_id == Setting::clear_scratch);
+        const bool action = row_id == Setting::clear_scratch || row_id == Setting::debug_report;
+        const bool toggle = in_rows_ && (is_toggle(row_id) || action);
         if (!in_rows_) {
             const ui::Hint hints[] = { { ui::Button::dpad, "Choose" }, { ui::Button::cross, "Open" } };
             ui::draw_hints(frame.scene, fonts_, style, hints, 2, kGridX + kGridW, true);
         } else {
             const ui::Hint hints[] = { { ui::Button::dpad, "Change" },
-                                       { ui::Button::cross, row_id == Setting::clear_scratch ? "Clear" : "Switch" },
+                                       { ui::Button::cross, row_id == Setting::clear_scratch  ? "Clear"
+                                                            : row_id == Setting::debug_report ? "Save"
+                                                                                              : "Switch" },
                                        { ui::Button::circle, "Back" } };
             const ui::Hint plain[] = { { ui::Button::dpad, "Change" }, { ui::Button::circle, "Back" } };
             ui::draw_hints(frame.scene, fonts_, style, toggle ? hints : plain, toggle ? 3 : 2, kGridX + kGridW, true);
