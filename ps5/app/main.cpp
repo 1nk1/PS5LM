@@ -1187,6 +1187,10 @@ int main(int, char **) {
             }
         }
         if (req.kind == Dashboard::Request::debug_report) {
+            if (dash.settings().debug_report_seen && !models.settings.debug_report_seen) {
+                models.settings.debug_report_seen = true;  // the popup was confirmed: not again
+                save_settings(kSettings.c_str(), models.settings);
+            }
             const std::string p = write_debug_report(live, data, models.settings.kernel_log);
             // Over FTP the app's own space is under its sandbox.
             const std::string ftp = p.rfind("/download0/", 0) == 0

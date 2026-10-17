@@ -105,7 +105,8 @@ space at the next start and keeps what is in it; lowering it frees nothing (test
 Uninstalling the app deletes the models in both places, so update by copying the new folder over
 the old one.
 
-If something goes wrong, open **Settings > App > Debug report** and press Cross. The app saves one
+If something goes wrong, open **Settings > App > Debug report** and press Cross (the first time, a
+popup says what the report holds before it is saved). The app saves one
 text file with its logs, settings, firmware, storage route, drives, models and which payloads are
 listening, and shows where it went: `/data/PS5LM/debug/` over FTP, or
 `/mnt/sandbox/PPSA99581_000/download0/PS5LM/debug/` when the app runs in its own space. Attach it

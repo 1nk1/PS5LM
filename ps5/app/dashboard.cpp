@@ -527,6 +527,18 @@ bool step_setting(Settings & s, Setting id, int dir, const std::vector<ModelRow>
 }  // namespace
 
 void Dashboard::update_settings(const hui::InputFrame & input, ui::Feedback & feedback) {
+    if (debug_confirm_) {
+        if (input.is_pressed(Action::confirm)) {
+            debug_confirm_ = false;
+            settings_.debug_report_seen = true;
+            request_ = { Request::debug_report, "" };
+            feedback.play(hui::audio::Cue::saved);
+        } else if (input.is_pressed(Action::back)) {
+            debug_confirm_ = false;
+            feedback.play(hui::audio::Cue::back);
+        }
+        return;
+    }
     const SettingCategory & c = kCategories[setting_category_];
     if (!in_rows_) {
         if (input.nav == Direction::up || input.nav == Direction::down) {
@@ -556,7 +568,10 @@ void Dashboard::update_settings(const hui::InputFrame & input, ui::Feedback & fe
     }
     const Setting id = c.rows[setting_row_].id;
     if (id == Setting::clear_scratch || id == Setting::debug_report) {
-        if (input.is_pressed(Action::confirm)) {
+        if (input.is_pressed(Action::confirm) && id == Setting::debug_report && !settings_.debug_report_seen) {
+            debug_confirm_ = true;  // what a report holds, once, before the first
+            feedback.play(hui::audio::Cue::modal_open);
+        } else if (input.is_pressed(Action::confirm)) {
             request_ = { id == Setting::clear_scratch ? Request::clear_scratch : Request::debug_report, "" };
             feedback.play(hui::audio::Cue::saved);
         }
@@ -2044,6 +2059,8 @@ void Dashboard::draw(DashboardFrame & frame) const {
     }
     if (storage_open_) {
         draw_storage(frame.overlay);  // with its own hint: the page's buttons wait
+    } else if (debug_confirm_) {
+        draw_debug_confirm(frame.overlay);
     } else {
         draw_hints(frame);
     }
@@ -2069,6 +2086,36 @@ void Dashboard::draw_busy(gfx::DrawList & list) const {
         ui::text(list, f.regular, f.regular.font->fit(busy_text_, 21, d.w - 200), d.x + 160, cy + 30, 21,
                  kInk.with_alpha(kMuted));
     }
+}
+
+// Before the first debug report: what it holds, for a user about to post it.
+void Dashboard::draw_debug_confirm(gfx::DrawList & list) const {
+    const ui::Fonts & f = fonts_;
+    list.rounded_rect({ 0, 0, 1920, 1080 }, 0, kBlack.with_alpha(0.6f));
+    const Rect d{ 960 - 500, 540 - 250, 1000, 500 };
+    list.shadow({ d.x, d.y + 18, d.w, d.h }, 28, 40, kBlack.with_alpha(0.6f));
+    list.rounded_rect(d, 28, kPanelBottom);  // solid: the rows under it stay out of the text
+    draw_panel(list, d, 28, 1.0f, kAmber);
+    const float x = d.x + 48, w = d.w - 96;
+    caps(list, f, "BEFORE YOU SHARE IT", x, d.y + 60, 18, kAmber);
+    ui::text(list, f.semibold, "A debug report is made to be posted. Read it first.", x, d.y + 108, 26, kInk);
+    ui::paragraph(list, f.regular,
+                  "It holds the app's logs and settings, the models and drives it sees, and the end of ShadowMountPlus's "
+                  "log, which lists the games and images it mounts on this console. With Kernel log in reports on, it "
+                  "also holds the kernel log, which names other apps and can show network addresses and account IDs. "
+                  "It holds no prompts or tokens.",
+                  x, d.y + 156, 21, w, 31, kInk.with_alpha(0.85f), 6);
+    ui::paragraph(list, f.regular,
+                  "Before posting, read it, or paste it into an LLM and ask it to point out anything personal, then "
+                  "remove what you would rather not share. This shows once.",
+                  x, d.y + 316, 21, w, 31, kInk.with_alpha(kMuted), 3);
+    const ui::Hint hints[] = { { ui::Button::cross, "Save the report" }, { ui::Button::circle, "Cancel" } };
+    ui::HintLayout layout;
+    layout.size = 34.0f;
+    layout.text_size = 22.0f;
+    layout.cy = d.y + d.h - 44;
+    layout.item_gap = 32.0f;
+    ui::draw_hints(list, fonts_, ui::GlyphStyle::dark(), hints, 2, d.x + d.w - 48, true, layout);
 }
 
 void Dashboard::update_storage(const hui::InputFrame & input, ui::Feedback & feedback) {

@@ -134,6 +134,8 @@ class Dashboard {
     std::string storage_title_, storage_room_, storage_firmware_;
     std::string debug_note_ = "Logs, settings and the console's state in one file";
     void draw_storage(hui::gfx::DrawList & list) const;
+    bool  debug_confirm_ = false;  // the popup before the first debug report
+    void draw_debug_confirm(hui::gfx::DrawList & list) const;
     void update_storage(const hui::InputFrame & input, hui::ui::Feedback & feedback);
     int   focus_ = 0;
     int   came_from_ = -1;

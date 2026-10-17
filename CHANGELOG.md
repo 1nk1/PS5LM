@@ -21,7 +21,8 @@ v0.1.x are the upstream payload releases by cobanov.
   `debug/` in the app's folder; a notification gives its FTP path. `scripts/ps5lm-app.sh
   debug-report` asks for one and copies it to the PC. **Kernel log in reports** (off by default)
   collects klogsrv's log from launch (the last 1 MiB) for the reports; its help says what the log
-  can show. Each report opens with what it holds and a tip to have an LLM check it before posting.
+  can show. Each report opens with what it holds and a tip to have an LLM check it before posting, and the
+  first one asks first: a popup says the same, with Save and Cancel.
 - `probes/sysmemprobe`: a read-only payload listing every process by
   resident size and the payload budget's limits (`budget_get`).
 
