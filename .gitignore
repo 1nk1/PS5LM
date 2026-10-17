@@ -16,3 +16,7 @@ models/
 
 # the app's home screen backgrounds, made from ps5/app/sce_sys/source by scripts/build-app.sh
 ps5/app/sce_sys/*.dds
+
+# agent notes and research docs, kept out of git
+AGENTS.md
+docs/OFFLOAD.md
