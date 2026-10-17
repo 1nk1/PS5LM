@@ -556,6 +556,15 @@ int main(int, char **) {
         setvbuf(stderr, nullptr, _IONBF, 0);
     }
     std::printf("ps5lm-app: version " PS5LM_VERSION "\n");
+    {
+        // What the title was given: param.json's kernel block sets the
+        // flexible part.
+        size_t flex_cfg = 0, flex_free = 0;
+        sceKernelConfiguredFlexibleMemorySize(&flex_cfg);
+        sceKernelAvailableFlexibleMemorySize(&flex_free);
+        std::printf("ps5lm-app: direct memory %.2f GiB, flexible %.2f GiB configured, %.2f GiB free\n",
+                    sceKernelGetDirectMemorySize() / 1073741824.0, flex_cfg / 1073741824.0, flex_free / 1073741824.0);
+    }
     // One device-local heap over the whole pool (RADV splits an APU's 2/3 to
     // 1/3), and a HOME for llama.cpp, which throws without one.
     setenv("radv_enable_unified_heap_on_apu", "true", 1);
