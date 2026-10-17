@@ -13,7 +13,7 @@
 int main(int argc, char ** argv) {
     const std::string dir = argc > 1 ? argv[1] : "models";
     const double budget = 11.38;
-    bool saw_q2k = false, saw_iq2xxs = false;
+    bool saw_q2k = false, saw_iq2xxs = false, saw_bonsai = false;
     for (const auto & path : ps5lm::find_models({ dir })) {
         const ps5lm::ModelInfo m = ps5lm::read_model_info(path);
         assert(m.ok);
@@ -27,7 +27,15 @@ int main(int argc, char ** argv) {
             assert(m.n_layer == 64 && m.n_kv_layers() == 16 && m.n_head_kv == 4 && m.key_length == 256);
             assert(kv_bytes_per_token(m, "f16") == 65536.0);
             assert(m.state_bytes > 140.0 * 1048576 && m.state_bytes < 170.0 * 1048576);
-            assert(pre && std::string(pre->label) == "Qwen 3.8");
+            const bool bonsai = std::string(pre ? pre->label : "") == "Ternary Bonsai 2";
+            assert(pre && (bonsai || std::string(pre->label) == "Qwen 3.8"));
+            if (bonsai) {
+                // 7.10 GiB of ternary weights: 64k with a q8_0 cache at the default cap,
+                // and 128k or more when the setting allows it.
+                assert(p.fits && p.ctx == 65536 && p.kv_type == "q8_0");
+                assert(ps5lm::plan_model(m, budget, 262144).ctx >= 131072);
+                saw_bonsai = true;
+            }
         }
         if (m.file_name.find("UD-Q2_K_XL") != std::string::npos) {
             // Ran on the console: 64k with a q4_0 cache.
@@ -41,6 +49,7 @@ int main(int argc, char ** argv) {
         }
     }
     assert(saw_q2k && saw_iq2xxs);
+    if (!saw_bonsai) std::puts("model_plan_test: no Bonsai file, its check skipped");
     // Nothing fits in too little memory.
     ps5lm::ModelInfo big;
     big.ok = true; big.file_bytes = 20ull << 30; big.n_layer = 32; big.n_head_kv = 8;
