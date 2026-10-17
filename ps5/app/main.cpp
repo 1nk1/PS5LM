@@ -17,6 +17,7 @@
 #include <dirent.h>
 #include <sys/stat.h>
 #include <sys/statvfs.h>
+#include <sys/sysctl.h>
 #include <unistd.h>
 
 #include <algorithm>
@@ -285,17 +286,17 @@ bool data_open() {
     return ok;
 }
 
-// The firmware as the system names it, or empty.
+// The firmware, "13.00", from kern.sdk_version (0x13000000 there), or empty.
+// sceKernelGetSystemSwVersion is no use for it: 13.590.001 on 13.00.
 std::string firmware() {
-    ps5_kernel_sw_version v = {};
-    v.size = sizeof(v);
-    if (sceKernelGetSystemSwVersion(&v) != 0) {
+    uint32_t v = 0;
+    size_t   n = sizeof(v);
+    if (sysctlbyname("kern.sdk_version", &v, &n, nullptr, 0) != 0 || v == 0) {
         return {};
     }
-    v.text[sizeof(v.text) - 1] = '\0';
-    std::string s = v.text;
-    s.erase(0, s.find_first_not_of(' '));
-    return s;
+    char text[16];
+    std::snprintf(text, sizeof(text), "%x.%02x", v >> 24, (v >> 16) & 0xff);
+    return text;
 }
 
 // How /data ended up, for the log. A refusal is remembered in /download0:
@@ -662,7 +663,15 @@ int main(int, char **) {
         setvbuf(stderr, nullptr, _IONBF, 0);
     }
     std::printf("ps5lm-app: version " PS5LM_VERSION "\n");
-    std::printf("ps5lm-app: firmware %s\n", firmware().c_str());
+    {
+        ps5_kernel_sw_version sw = {};
+        sw.size = sizeof(sw);
+        uint32_t sdk = 0;
+        size_t   n = sizeof(sdk);
+        sysctlbyname("kern.sdk_version", &sdk, &n, nullptr, 0);
+        std::printf("ps5lm-app: firmware %s (kern.sdk_version 0x%08x, system software %s)\n", firmware().c_str(), sdk,
+                    sceKernelGetSystemSwVersion(&sw) == 0 ? sw.text : "?");
+    }
     std::printf("ps5lm-app: /data %s; the app's folder is %s\n", data.c_str(), kDir.c_str());
     // One device-local heap over the whole pool (RADV splits an APU's 2/3 to
     // 1/3), and a HOME for llama.cpp, which throws without one.
