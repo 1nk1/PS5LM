@@ -527,14 +527,19 @@ bool step_setting(Settings & s, Setting id, int dir, const std::vector<ModelRow>
 }  // namespace
 
 void Dashboard::update_settings(const hui::InputFrame & input, ui::Feedback & feedback) {
-    if (debug_confirm_) {
+    if (debug_confirm_ || klog_confirm_) {
         if (input.is_pressed(Action::confirm)) {
-            debug_confirm_ = false;
-            settings_.debug_report_seen = true;
-            request_ = { Request::debug_report, "" };
+            if (debug_confirm_) {
+                settings_.debug_report_seen = true;
+                request_ = { Request::debug_report, "" };
+            } else {
+                settings_.kernel_log = true;
+                request_ = { Request::settings, "" };
+            }
+            debug_confirm_ = klog_confirm_ = false;
             feedback.play(hui::audio::Cue::saved);
         } else if (input.is_pressed(Action::back)) {
-            debug_confirm_ = false;
+            debug_confirm_ = klog_confirm_ = false;
             feedback.play(hui::audio::Cue::back);
         }
         return;
@@ -599,7 +604,10 @@ void Dashboard::update_settings(const hui::InputFrame & input, ui::Feedback & fe
                 dir = 0;
             }
         }
-        if (dir != 0 && step_setting(settings_, id, dir, live_.models, live_.drives)) {
+        if (dir > 0 && id == Setting::kernel_log && !settings_.kernel_log) {
+            klog_confirm_ = true;  // on only after the popup says what it does
+            feedback.play(hui::audio::Cue::modal_open);
+        } else if (dir != 0 && step_setting(settings_, id, dir, live_.models, live_.drives)) {
             request_ = { Request::settings, "" };
             feedback.play(is_toggle(id) ? hui::audio::Cue::toggle : hui::audio::Cue::slider, 1.0f + 0.05f * (float) dir);
         } else if (dir != 0 && !input.nav_repeat) {
@@ -2060,7 +2068,22 @@ void Dashboard::draw(DashboardFrame & frame) const {
     if (storage_open_) {
         draw_storage(frame.overlay);  // with its own hint: the page's buttons wait
     } else if (debug_confirm_) {
-        draw_debug_confirm(frame.overlay);
+        draw_notice(frame.overlay, "BEFORE YOU SHARE IT", "A debug report is made to be posted. Read it first.",
+                    "It holds the app's logs and settings, the models and drives it sees, and the end of ShadowMountPlus's "
+                    "log, which lists the games and images it mounts on this console. With Kernel log in reports on, it "
+                    "also holds the kernel log, which names other apps and can show network addresses and account IDs. "
+                    "It holds no prompts or tokens.",
+                    "Before posting, read it, or paste it into an LLM and ask it to point out anything personal, then "
+                    "remove what you would rather not share. This shows once.",
+                    "Save the report", "Cancel");
+    } else if (klog_confirm_) {
+        draw_notice(frame.overlay, "KERNEL LOG IN REPORTS", "The app will keep a connection to klogsrv open.",
+                    "From each launch it keeps the last 1 MiB of the kernel log (klogsrv, port 3232) in memory, and debug "
+                    "reports add it. The kernel log names other apps and services and can show network addresses and "
+                    "account IDs. klogsrv sends every line to every client, so your own captures on a PC keep working.",
+                    "Turn it on when someone asks for the kernel log, reproduce the problem, save a report, then turn it "
+                    "off. A restart for a model starts the collection again.",
+                    "Turn it on", "Keep it off");
     } else {
         draw_hints(frame);
     }
@@ -2088,8 +2111,9 @@ void Dashboard::draw_busy(gfx::DrawList & list) const {
     }
 }
 
-// Before the first debug report: what it holds, for a user about to post it.
-void Dashboard::draw_debug_confirm(gfx::DrawList & list) const {
+// A question over everything: what an action does, Cross to go ahead.
+void Dashboard::draw_notice(gfx::DrawList & list, const char * title, const char * head, const char * body,
+                            const char * tip, const char * yes, const char * no) const {
     const ui::Fonts & f = fonts_;
     list.rounded_rect({ 0, 0, 1920, 1080 }, 0, kBlack.with_alpha(0.6f));
     const Rect d{ 960 - 500, 540 - 250, 1000, 500 };
@@ -2097,19 +2121,11 @@ void Dashboard::draw_debug_confirm(gfx::DrawList & list) const {
     list.rounded_rect(d, 28, kPanelBottom);  // solid: the rows under it stay out of the text
     draw_panel(list, d, 28, 1.0f, kAmber);
     const float x = d.x + 48, w = d.w - 96;
-    caps(list, f, "BEFORE YOU SHARE IT", x, d.y + 60, 18, kAmber);
-    ui::text(list, f.semibold, "A debug report is made to be posted. Read it first.", x, d.y + 108, 26, kInk);
-    ui::paragraph(list, f.regular,
-                  "It holds the app's logs and settings, the models and drives it sees, and the end of ShadowMountPlus's "
-                  "log, which lists the games and images it mounts on this console. With Kernel log in reports on, it "
-                  "also holds the kernel log, which names other apps and can show network addresses and account IDs. "
-                  "It holds no prompts or tokens.",
-                  x, d.y + 156, 21, w, 31, kInk.with_alpha(0.85f), 6);
-    ui::paragraph(list, f.regular,
-                  "Before posting, read it, or paste it into an LLM and ask it to point out anything personal, then "
-                  "remove what you would rather not share. This shows once.",
-                  x, d.y + 316, 21, w, 31, kInk.with_alpha(kMuted), 3);
-    const ui::Hint hints[] = { { ui::Button::cross, "Save the report" }, { ui::Button::circle, "Cancel" } };
+    caps(list, f, title, x, d.y + 60, 18, kAmber);
+    ui::text(list, f.semibold, head, x, d.y + 108, 26, kInk);
+    ui::paragraph(list, f.regular, body, x, d.y + 156, 21, w, 31, kInk.with_alpha(0.85f), 6);
+    ui::paragraph(list, f.regular, tip, x, d.y + 316, 21, w, 31, kInk.with_alpha(kMuted), 3);
+    const ui::Hint hints[] = { { ui::Button::cross, yes }, { ui::Button::circle, no } };
     ui::HintLayout layout;
     layout.size = 34.0f;
     layout.text_size = 22.0f;

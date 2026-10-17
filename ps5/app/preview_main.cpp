@@ -358,6 +358,9 @@ int main(int argc, char ** argv) {
     step(20, nav(hui::Direction::down), false);
     step(30, nav(hui::Direction::none), false);
     shot("08-settings-kernel-log");
+    step(30, press(hui::Action::confirm), false);
+    shot("08-settings-kernel-log-popup");
+    step(20, press(hui::Action::back), false);
     step(20, press(hui::Action::back), false);
     step(40, press(hui::Action::page_next), false);
     shot("09-logs");

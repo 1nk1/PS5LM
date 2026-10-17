@@ -343,8 +343,12 @@ std::string file_tail(const std::string & path, long bytes) {
 }
 
 // The kernel log for debug reports, while Settings allows it. klogsrv (port
-// 3232) sends no backlog, only what comes after a client connects, so a
-// thread keeps a connection from launch and holds the last 1 MiB.
+// 3232) sends no backlog, only what comes after a client connects, and the
+// same lines to every client (two PC captures beside the app matched line
+// for line), so a thread keeps a connection from launch and holds the last
+// 1 MiB. Its limits: 1.5 MiB of memory at most, one recv a second when
+// quiet, a reconnect every 5 s when klogsrv is gone, and a failure stops it
+// rather than the app.
 // ponytail: 1 MiB holds a few hours of an idle console; raise it if crashes scroll off
 struct KlogTail {
     std::atomic<bool> on{ false };
@@ -394,9 +398,17 @@ struct KlogTail {
                     }
                     if (n > 0) {
                         std::lock_guard<std::mutex> lock(mutex);
-                        text.append(buf, (size_t) n);
-                        if (text.size() > (1u << 20)) {
-                            text.erase(0, text.find('\n', text.size() - (1u << 20)) + 1);
+                        try {
+                            text.append(buf, (size_t) n);
+                            // Trimmed at 1.5 MiB back to the last 1 MiB, from a line start.
+                            if (text.size() > (3u << 19)) {
+                                const size_t cut = text.size() - (1u << 20);
+                                const size_t nl = text.find('\n', cut);
+                                text.erase(0, nl == std::string::npos ? cut : nl + 1);
+                            }
+                        } catch (const std::exception &) {
+                            text.clear();
+                            on = false;  // out of memory: no kernel log rather than no app
                         }
                     }
                 }

@@ -118,7 +118,8 @@ it to point out anything personal, and remove what you would rather not share.
 the klogsrv payload (port 3232) from launch, keeping the last 1 MiB, and adds it to reports.
 klogsrv sends nothing from before a client connects, so turn it on, reproduce the problem, then
 save the report. The kernel log names other apps and services and can show network addresses and
-account IDs: turn it on only when asked for it.
+account IDs: turn it on only when asked for it; switching it on shows a popup that says so first.
+klogsrv sends every line to every client, so captures on a PC keep working while it is on.
 
 Which models fit is in [docs/MODELS.md](docs/MODELS.md); anything llama.cpp runs works if the library shows LOAD.
 

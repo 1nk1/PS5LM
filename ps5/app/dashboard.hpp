@@ -135,7 +135,9 @@ class Dashboard {
     std::string debug_note_ = "Logs, settings and the console's state in one file";
     void draw_storage(hui::gfx::DrawList & list) const;
     bool  debug_confirm_ = false;  // the popup before the first debug report
-    void draw_debug_confirm(hui::gfx::DrawList & list) const;
+    bool  klog_confirm_ = false;   // the popup before Kernel log in reports goes on
+    void draw_notice(hui::gfx::DrawList & list, const char * title, const char * head, const char * body,
+                     const char * tip, const char * yes, const char * no) const;
     void update_storage(const hui::InputFrame & input, hui::ui::Feedback & feedback);
     int   focus_ = 0;
     int   came_from_ = -1;
