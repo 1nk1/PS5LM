@@ -88,7 +88,7 @@ PS5LM's app (`ps5/app`, PPSA99581) is a title, not a payload: it gets the consol
 | Prompt | 35 to 50 tok/s |
 | Generation | 21 tok/s on a short prompt, 9 tok/s after the web UI's 371-token prompt |
 
-Where the rest of the 12 GiB goes: the app saw 11.38 GiB free at start, while PS5_Vulkan's runner, with the same pool and the same direct-memory heap, saw 12,882,739,200 bytes free and mapped all but 2 MiB of it (its jobs/r87-gpu-ceiling). The difference was `param.json`: PS5LM had ProsperoAI's `amm` block (256 MiB of page tables) and `kernel` block (256 MiB each for CPU and GPU page tables), which PS5_Vulkan's title does not set and nothing in PS5LM uses. Both are gone; the start log's `pool free` should now read about 11.9 GiB. Not yet checked on the console. If mappings fail without them, they were needed after all.
+Where the rest of the 12 GiB goes: the app saw 11.38 GiB free at start, while PS5_Vulkan's runner, with the same pool and the same direct-memory heap, saw 12,882,739,200 bytes free and mapped all but 2 MiB of it (its jobs/r87-gpu-ceiling). The difference was `param.json`: PS5LM had ProsperoAI's `amm` block (256 MiB of page tables) and `kernel` block (256 MiB each for CPU and GPU page tables), which PS5_Vulkan's title does not set and nothing in PS5LM uses. They came out of the title's direct memory itself: with them, the pool and RADV's heap were 11.44 GiB; without them (v0.8.3 from `main`), `sceKernelGetDirectMemorySize` reports 12.00 GiB and the app has 11.58 GiB free before loading a model, against 11.01 GiB before, with the dashboard up.
 
 What a title has to do differently from a payload, each found by a crash:
 
