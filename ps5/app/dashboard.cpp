@@ -171,7 +171,7 @@ constexpr int          kMarketRows = 9;
 // ---- Settings: categories of rows, after the kit's "Control Room" ---------------
 
 enum class Setting : int { auto_load, default_model, ctx_cap, kv_type, sounds, tools, scratch_limit, clear_scratch, download_dir,
-                           debug_report };
+                           debug_report, kernel_log };
 
 struct SettingRow {
     Setting      id;
@@ -203,8 +203,9 @@ constexpr SettingCategory kCategories[] = {
     { "App", "The app itself.",
       { { Setting::sounds, "Sounds", "Interface sounds on the TV." },
         { Setting::download_dir, "Download to", "Where Get models saves: internal storage, or PS5LM/models on an M.2 or USB drive." },
-        { Setting::debug_report, "Debug report", "For a bug report: saves the logs and the console's state to one file in debug/. Read it before posting." } },
-      3 },
+        { Setting::debug_report, "Debug report", "One file in debug/ for a bug report. It includes ShadowMountPlus's log, which lists mounted games." },
+        { Setting::kernel_log, "Kernel log in reports", "Collects klogsrv's log from launch. It names other apps and can show network addresses and account IDs." } },
+      4 },
 };
 constexpr int kCategoryCount = 4;
 
@@ -425,10 +426,12 @@ std::string setting_text(const Settings & s, Setting id, const std::vector<Model
     }
 }
 
-bool is_toggle(Setting id) { return id == Setting::auto_load || id == Setting::sounds || id == Setting::tools; }
+bool is_toggle(Setting id) {
+    return id == Setting::auto_load || id == Setting::sounds || id == Setting::tools || id == Setting::kernel_log;
+}
 
 bool toggle_value(const Settings & s, Setting id) {
-    return id == Setting::auto_load ? s.auto_load : id == Setting::sounds ? s.sounds : s.tools;
+    return id == Setting::auto_load ? s.auto_load : id == Setting::sounds ? s.sounds : id == Setting::kernel_log ? s.kernel_log : s.tools;
 }
 
 constexpr uint32_t kScratchSteps[] = { 1, 2, 5, 10, 20 };
@@ -499,6 +502,7 @@ bool step_setting(Settings & s, Setting id, int dir, const std::vector<ModelRow>
         case Setting::auto_load: s.auto_load = !s.auto_load; return true;
         case Setting::sounds: s.sounds = !s.sounds; return true;
         case Setting::tools: s.tools = !s.tools; return true;
+        case Setting::kernel_log: s.kernel_log = !s.kernel_log; return true;
         case Setting::clear_scratch: return false;
         case Setting::debug_report: return false;
         case Setting::download_dir: {

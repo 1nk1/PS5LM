@@ -19,7 +19,9 @@ v0.1.x are the upstream payload releases by cobanov.
 - **Settings > App > Debug report**: one text file for a bug report, with the logs, settings,
   firmware, storage route, drives, models and the payload ports that listen, saved under
   `debug/` in the app's folder; a notification gives its FTP path. `scripts/ps5lm-app.sh
-  debug-report` asks for one and copies it to the PC.
+  debug-report` asks for one and copies it to the PC. **Kernel log in reports** (off by default)
+  collects klogsrv's log from launch (the last 1 MiB) for the reports; its help says what the log
+  can show. Each report opens with what it holds and a tip to have an LLM check it before posting.
 - `probes/sysmemprobe`: a read-only payload listing every process by
   resident size and the payload budget's limits (`budget_get`).
 

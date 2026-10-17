@@ -75,16 +75,20 @@ screenshot() {
     echo "ps5lm-app: screenshot in ${1:-build/app-ps5/screen.bmp}"
 }
 
-# A debug report from the running app, copied to build/app-ps5/ (or $2).
+# A debug report from the running app, copied to build/app-ps5/ (or $2): the
+# newest file in debug/ that was not there before the request, once the app
+# has logged writing it.
 debug_report() {
+    local before name=
+    before=$(curl -s "$ftp/data/PS5LM/debug/" | awk '{print $NF}')
     request debug-report
-    for _ in $(seq 1 20); do
+    for _ in $(seq 1 30); do
         sleep 1
-        curl -sf "$ftp/data/PS5LM/debug-report" -o /dev/null || break
+        name=$(curl -s "$ftp/data/PS5LM/app.log" | grep "ps5lm-app: debug report /" | tail -1 | awk '{print $NF}')
+        name=${name##*/}
+        [ -n "$name" ] && ! grep -qx "$name" <<< "$before" && break
+        name=
     done
-    sleep 2
-    local name
-    name=$(curl -s "$ftp/data/PS5LM/debug/" | awk '{print $NF}' | grep '^ps5lm-debug-.*\.txt$' | sort | tail -1)
     [ -n "$name" ] || { echo "ps5lm-app: no debug report (is the app running?)" >&2; exit 1; }
     curl -sS "$ftp/data/PS5LM/debug/$name" -o "${2:-build/app-ps5}/$name"
     echo "ps5lm-app: debug report in ${2:-build/app-ps5}/$name"

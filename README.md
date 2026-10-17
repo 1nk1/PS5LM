@@ -109,7 +109,15 @@ If something goes wrong, open **Settings > App > Debug report** and press Cross.
 text file with its logs, settings, firmware, storage route, drives, models and which payloads are
 listening, and shows where it went: `/data/PS5LM/debug/` over FTP, or
 `/mnt/sandbox/PPSA99581_000/download0/PS5LM/debug/` when the app runs in its own space. Attach it
-to an issue; it holds no prompts or tokens, but read it before posting.
+to an issue. It holds no prompts or tokens, but it does include the end of ShadowMountPlus's log,
+which lists the games and images it mounts. Read it before posting, or paste it into an LLM and ask
+it to point out anything personal, and remove what you would rather not share.
+
+**Kernel log in reports** (Settings > App, off by default) has the app collect the kernel log from
+the klogsrv payload (port 3232) from launch, keeping the last 1 MiB, and adds it to reports.
+klogsrv sends nothing from before a client connects, so turn it on, reproduce the problem, then
+save the report. The kernel log names other apps and services and can show network addresses and
+account IDs: turn it on only when asked for it.
 
 Which models fit is in [docs/MODELS.md](docs/MODELS.md); anything llama.cpp runs works if the library shows LOAD.
 
