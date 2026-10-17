@@ -12,7 +12,7 @@
 
 ## What it does
 
-A payload gets about 6 GiB of memory and no GPU. A native app (a title) gets the console's 12 GiB of direct memory and the GPU, so PS5LM Plus runs as one: llama-server with ggml's Vulkan backend on Mihawk-99's RADV port, in one 11.44 GiB device heap.
+A payload gets about 6 GiB of memory and no GPU. A native app (a title) gets the console's 12 GiB of direct memory and the GPU, so PS5LM Plus runs as one: llama-server with ggml's Vulkan backend on Mihawk-99's RADV port, in one 12 GiB device heap.
 
 | Model (on the PS5 GPU) | Context | Generation |
 |---|---|---|
@@ -110,7 +110,7 @@ The full notes are in [docs/CONSOLE.md](docs/CONSOLE.md). In short:
 
 - **CPU first:** Qwen 3.8 27B ran as a payload on the Zen 2 CPU, streamed from disk at about a token a minute: proof that llama.cpp works on the console, and that the GPU was needed.
 - **A title, not a payload:** llama-server linked into an fSELF `eboot.bin` with a clean-room `libc.prx`, registered through ShadowMountPlus. Titles may not `exit()`, have some libc imports resolve to nothing, and need a working `getaddrinfo`, `accept4` and `HOME`; each was found by a crash.
-- **The GPU:** ggml-vulkan on [PS5_Vulkan](https://github.com/mihawk-99/PS5_Vulkan)'s RADV with no Vulkan loader, and RADV's unified heap for 11.44 GiB in one heap.
+- **The GPU:** ggml-vulkan on [PS5_Vulkan](https://github.com/mihawk-99/PS5_Vulkan)'s RADV with no Vulkan loader, and RADV's unified heap for the whole 12 GiB in one heap.
 - **The screen:** [ps5-homebrew-ui](https://github.com/blackbearreloaded/ps5-homebrew-ui) through ps5-opengl, in the same process as RADV (the two Mesa builds share 4,399 symbol names, so the GL stack is linked with only its API visible).
 - **Switching models:** unloading in place leaves about 5 GiB of the pool held, so the app restarts itself for each switch.
 - **HTTPS:** downloads use the system's own libSceHttp2 and libSceSsl, so the app carries no TLS library or certificates.

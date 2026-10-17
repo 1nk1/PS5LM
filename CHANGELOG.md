@@ -7,6 +7,18 @@ v0.1.x are the upstream payload releases by cobanov.
 
 ## [Unreleased]
 
+### Changed
+- About 0.57 GiB more memory for models: 11.58 GiB free before loading,
+  from 11.01. `sce_sys/param.json` no longer has the `amm` and `kernel`
+  page-table blocks copied from ProsperoAI; their 768 MiB came out of the
+  title's own memory, so the pool and RADV's heap are now the whole 12 GiB
+  (11.44 GiB before).
+- The app logs its direct and flexible memory sizes at start.
+
+### Added
+- `probes/sysmemprobe`: a read-only payload listing every process by
+  resident size and the payload budget's limits (`budget_get`).
+
 ## [0.8.3] - 2026-10-13
 
 ### Changed
