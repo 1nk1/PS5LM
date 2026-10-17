@@ -138,6 +138,8 @@ void set_internal_drive(std::string name, std::string models, std::string mount)
 std::string drive_name(const std::string & path);
 
 bool send_payload(const char * path, int port);
+// Whether something on this console listens on a TCP port.
+bool port_open(int port);
 
 std::string local_address();
 

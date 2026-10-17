@@ -105,6 +105,22 @@ space at the next start and keeps what is in it; lowering it frees nothing (test
 Uninstalling the app deletes the models in both places, so update by copying the new folder over
 the old one.
 
+If something goes wrong, open **Settings > App > Debug report** and press Cross (the first time, a
+popup says what the report holds before it is saved). The app saves one
+text file with its logs, settings, firmware, storage route, drives, models and which payloads are
+listening, and shows where it went: `/data/PS5LM/debug/` over FTP, or
+`/mnt/sandbox/PPSA99581_000/download0/PS5LM/debug/` when the app runs in its own space. Attach it
+to an issue. It holds no prompts or tokens, but it does include the end of ShadowMountPlus's log,
+which lists the games and images it mounts. Read it before posting, or paste it into an LLM and ask
+it to point out anything personal, and remove what you would rather not share.
+
+**Kernel log in reports** (Settings > App, off by default) has the app collect the kernel log from
+the klogsrv payload (port 3232) from launch, keeping the last 1 MiB, and adds it to reports.
+klogsrv sends nothing from before a client connects, so turn it on, reproduce the problem, then
+save the report. The kernel log names other apps and services and can show network addresses and
+account IDs: turn it on only when asked for it; switching it on shows a popup that says so first.
+klogsrv sends every line to every client, so captures on a PC keep working while it is on.
+
 Which models fit is in [docs/MODELS.md](docs/MODELS.md); anything llama.cpp runs works if the library shows LOAD.
 
 ## Controls

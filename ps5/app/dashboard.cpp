@@ -170,7 +170,8 @@ constexpr int          kMarketRows = 9;
 
 // ---- Settings: categories of rows, after the kit's "Control Room" ---------------
 
-enum class Setting : int { auto_load, default_model, ctx_cap, kv_type, sounds, tools, scratch_limit, clear_scratch, download_dir };
+enum class Setting : int { auto_load, default_model, ctx_cap, kv_type, sounds, tools, scratch_limit, clear_scratch, download_dir,
+                           debug_report, kernel_log };
 
 struct SettingRow {
     Setting      id;
@@ -201,8 +202,10 @@ constexpr SettingCategory kCategories[] = {
       3 },
     { "App", "The app itself.",
       { { Setting::sounds, "Sounds", "Interface sounds on the TV." },
-        { Setting::download_dir, "Download to", "Where Get models saves: internal storage, or PS5LM/models on an M.2 or USB drive." } },
-      2 },
+        { Setting::download_dir, "Download to", "Where Get models saves: internal storage, or PS5LM/models on an M.2 or USB drive." },
+        { Setting::debug_report, "Debug report", "One file in debug/ for a bug report. It includes ShadowMountPlus's log, which lists mounted games." },
+        { Setting::kernel_log, "Kernel log in reports", "Collects klogsrv's log from launch. It names other apps and can show network addresses and account IDs." } },
+      4 },
 };
 constexpr int kCategoryCount = 4;
 
@@ -423,10 +426,12 @@ std::string setting_text(const Settings & s, Setting id, const std::vector<Model
     }
 }
 
-bool is_toggle(Setting id) { return id == Setting::auto_load || id == Setting::sounds || id == Setting::tools; }
+bool is_toggle(Setting id) {
+    return id == Setting::auto_load || id == Setting::sounds || id == Setting::tools || id == Setting::kernel_log;
+}
 
 bool toggle_value(const Settings & s, Setting id) {
-    return id == Setting::auto_load ? s.auto_load : id == Setting::sounds ? s.sounds : s.tools;
+    return id == Setting::auto_load ? s.auto_load : id == Setting::sounds ? s.sounds : id == Setting::kernel_log ? s.kernel_log : s.tools;
 }
 
 constexpr uint32_t kScratchSteps[] = { 1, 2, 5, 10, 20 };
@@ -497,7 +502,9 @@ bool step_setting(Settings & s, Setting id, int dir, const std::vector<ModelRow>
         case Setting::auto_load: s.auto_load = !s.auto_load; return true;
         case Setting::sounds: s.sounds = !s.sounds; return true;
         case Setting::tools: s.tools = !s.tools; return true;
+        case Setting::kernel_log: s.kernel_log = !s.kernel_log; return true;
         case Setting::clear_scratch: return false;
+        case Setting::debug_report: return false;
         case Setting::download_dir: {
             // Each mounted drive in turn; a missing one counts as before the first.
             int at = -1;
@@ -520,6 +527,23 @@ bool step_setting(Settings & s, Setting id, int dir, const std::vector<ModelRow>
 }  // namespace
 
 void Dashboard::update_settings(const hui::InputFrame & input, ui::Feedback & feedback) {
+    if (debug_confirm_ || klog_confirm_) {
+        if (input.is_pressed(Action::confirm)) {
+            if (debug_confirm_) {
+                settings_.debug_report_seen = true;
+                request_ = { Request::debug_report, "" };
+            } else {
+                settings_.kernel_log = true;
+                request_ = { Request::settings, "" };
+            }
+            debug_confirm_ = klog_confirm_ = false;
+            feedback.play(hui::audio::Cue::saved);
+        } else if (input.is_pressed(Action::back)) {
+            debug_confirm_ = klog_confirm_ = false;
+            feedback.play(hui::audio::Cue::back);
+        }
+        return;
+    }
     const SettingCategory & c = kCategories[setting_category_];
     if (!in_rows_) {
         if (input.nav == Direction::up || input.nav == Direction::down) {
@@ -548,9 +572,12 @@ void Dashboard::update_settings(const hui::InputFrame & input, ui::Feedback & fe
         }
     }
     const Setting id = c.rows[setting_row_].id;
-    if (id == Setting::clear_scratch) {
-        if (input.is_pressed(Action::confirm)) {
-            request_ = { Request::clear_scratch, "" };
+    if (id == Setting::clear_scratch || id == Setting::debug_report) {
+        if (input.is_pressed(Action::confirm) && id == Setting::debug_report && !settings_.debug_report_seen) {
+            debug_confirm_ = true;  // what a report holds, once, before the first
+            feedback.play(hui::audio::Cue::modal_open);
+        } else if (input.is_pressed(Action::confirm)) {
+            request_ = { id == Setting::clear_scratch ? Request::clear_scratch : Request::debug_report, "" };
             feedback.play(hui::audio::Cue::saved);
         }
         if (input.is_pressed(Action::back)) {
@@ -577,7 +604,10 @@ void Dashboard::update_settings(const hui::InputFrame & input, ui::Feedback & fe
                 dir = 0;
             }
         }
-        if (dir != 0 && step_setting(settings_, id, dir, live_.models, live_.drives)) {
+        if (dir > 0 && id == Setting::kernel_log && !settings_.kernel_log) {
+            klog_confirm_ = true;  // on only after the popup says what it does
+            feedback.play(hui::audio::Cue::modal_open);
+        } else if (dir != 0 && step_setting(settings_, id, dir, live_.models, live_.drives)) {
             request_ = { Request::settings, "" };
             feedback.play(is_toggle(id) ? hui::audio::Cue::toggle : hui::audio::Cue::slider, 1.0f + 0.05f * (float) dir);
         } else if (dir != 0 && !input.nav_repeat) {
@@ -1571,13 +1601,14 @@ void Dashboard::draw_settings(gfx::DrawList & list) const {
             list.rounded_rect(thumb, 17, on ? kPanelBottom : kInk);
             ui::text(list, f.regular, on ? "On" : "Off", pill.x - 20, row.cy() + 8, 24,
                      kInk.with_alpha(focused ? 0.95f : 0.66f), gfx::Align::right);
-        } else if (sr.id == Setting::clear_scratch) {
-            // An action row: what it would delete, and a chevron.
+        } else if (sr.id == Setting::clear_scratch || sr.id == Setting::debug_report) {
+            // An action row: what it would delete, or the last report, and a chevron.
             char t[48];
             std::snprintf(t, sizeof(t), "%.2f GiB in the folder", live_.scratch_gib);
-            ui::text(list, f.regular, t, right - 34, row.cy() + 8, 24, kInk.with_alpha(focused ? 0.8f : 0.55f),
-                     gfx::Align::right);
-            const Color ink = focused ? kRose : kInk.with_alpha(0.6f);
+            const std::string v = sr.id == Setting::clear_scratch ? std::string(t) : debug_note_;
+            ui::text(list, f.regular, f.regular.font->fit(v, 24, 620), right - 34, row.cy() + 8, 24,
+                     kInk.with_alpha(focused ? 0.8f : 0.55f), gfx::Align::right);
+            const Color ink = focused ? (sr.id == Setting::clear_scratch ? kRose : kCyan) : kInk.with_alpha(0.6f);
             list.line(right - 12, row.cy() - 9, right - 3, row.cy(), 3.0f, ink);
             list.line(right - 12, row.cy() + 9, right - 3, row.cy(), 3.0f, ink);
         } else {
@@ -1931,13 +1962,16 @@ void Dashboard::draw_hints(DashboardFrame & frame) const {
         ui::draw_hints(frame.overlay, fonts_, style, model ? hints : hints + 1, model ? 2 : 1, kGridX + kGridW, true);
     } else if (page_ == 1) {
         const Setting row_id = kCategories[setting_category_].rows[setting_row_].id;
-        const bool toggle = in_rows_ && (is_toggle(row_id) || row_id == Setting::clear_scratch);
+        const bool action = row_id == Setting::clear_scratch || row_id == Setting::debug_report;
+        const bool toggle = in_rows_ && (is_toggle(row_id) || action);
         if (!in_rows_) {
             const ui::Hint hints[] = { { ui::Button::dpad, "Choose" }, { ui::Button::cross, "Open" } };
             ui::draw_hints(frame.scene, fonts_, style, hints, 2, kGridX + kGridW, true);
         } else {
             const ui::Hint hints[] = { { ui::Button::dpad, "Change" },
-                                       { ui::Button::cross, row_id == Setting::clear_scratch ? "Clear" : "Switch" },
+                                       { ui::Button::cross, row_id == Setting::clear_scratch  ? "Clear"
+                                                            : row_id == Setting::debug_report ? "Save"
+                                                                                              : "Switch" },
                                        { ui::Button::circle, "Back" } };
             const ui::Hint plain[] = { { ui::Button::dpad, "Change" }, { ui::Button::circle, "Back" } };
             ui::draw_hints(frame.scene, fonts_, style, toggle ? hints : plain, toggle ? 3 : 2, kGridX + kGridW, true);
@@ -2033,6 +2067,23 @@ void Dashboard::draw(DashboardFrame & frame) const {
     }
     if (storage_open_) {
         draw_storage(frame.overlay);  // with its own hint: the page's buttons wait
+    } else if (debug_confirm_) {
+        draw_notice(frame.overlay, "BEFORE YOU SHARE IT", "A debug report is made to be posted. Read it first.",
+                    "It holds the app's logs and settings, the models and drives it sees, and the end of ShadowMountPlus's "
+                    "log, which lists the games and images it mounts on this console. With Kernel log in reports on, it "
+                    "also holds the kernel log, which names other apps and can show network addresses and account IDs. "
+                    "It holds no prompts or tokens.",
+                    "Before posting, read it, or paste it into an LLM and ask it to point out anything personal, then "
+                    "remove what you would rather not share. This shows once.",
+                    "Save the report", "Cancel");
+    } else if (klog_confirm_) {
+        draw_notice(frame.overlay, "KERNEL LOG IN REPORTS", "The app will keep a connection to klogsrv open.",
+                    "From each launch it keeps the last 1 MiB of the kernel log (klogsrv, port 3232) in memory, and debug "
+                    "reports add it. The kernel log names other apps and services and can show network addresses and "
+                    "account IDs. klogsrv sends every line to every client, so your own captures on a PC keep working.",
+                    "Turn it on when someone asks for the kernel log, reproduce the problem, save a report, then turn it "
+                    "off. A restart for a model starts the collection again.",
+                    "Turn it on", "Keep it off");
     } else {
         draw_hints(frame);
     }
@@ -2058,6 +2109,29 @@ void Dashboard::draw_busy(gfx::DrawList & list) const {
         ui::text(list, f.regular, f.regular.font->fit(busy_text_, 21, d.w - 200), d.x + 160, cy + 30, 21,
                  kInk.with_alpha(kMuted));
     }
+}
+
+// A question over everything: what an action does, Cross to go ahead.
+void Dashboard::draw_notice(gfx::DrawList & list, const char * title, const char * head, const char * body,
+                            const char * tip, const char * yes, const char * no) const {
+    const ui::Fonts & f = fonts_;
+    list.rounded_rect({ 0, 0, 1920, 1080 }, 0, kBlack.with_alpha(0.6f));
+    const Rect d{ 960 - 500, 540 - 250, 1000, 500 };
+    list.shadow({ d.x, d.y + 18, d.w, d.h }, 28, 40, kBlack.with_alpha(0.6f));
+    list.rounded_rect(d, 28, kPanelBottom);  // solid: the rows under it stay out of the text
+    draw_panel(list, d, 28, 1.0f, kAmber);
+    const float x = d.x + 48, w = d.w - 96;
+    caps(list, f, title, x, d.y + 60, 18, kAmber);
+    ui::text(list, f.semibold, head, x, d.y + 108, 26, kInk);
+    ui::paragraph(list, f.regular, body, x, d.y + 156, 21, w, 31, kInk.with_alpha(0.85f), 6);
+    ui::paragraph(list, f.regular, tip, x, d.y + 316, 21, w, 31, kInk.with_alpha(kMuted), 3);
+    const ui::Hint hints[] = { { ui::Button::cross, yes }, { ui::Button::circle, no } };
+    ui::HintLayout layout;
+    layout.size = 34.0f;
+    layout.text_size = 22.0f;
+    layout.cy = d.y + d.h - 44;
+    layout.item_gap = 32.0f;
+    ui::draw_hints(list, fonts_, ui::GlyphStyle::dark(), hints, 2, d.x + d.w - 48, true, layout);
 }
 
 void Dashboard::update_storage(const hui::InputFrame & input, ui::Feedback & feedback) {

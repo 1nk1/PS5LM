@@ -15,6 +15,8 @@
 #include <pthread.h>
 #include <fcntl.h>
 #include <dirent.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/statvfs.h>
 #include <sys/sysctl.h>
@@ -22,6 +24,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -323,6 +326,201 @@ std::string open_data() {
     mkdir("/download0/PS5LM", 0777);
     std::ofstream(kRefused) << "1\n";
     return std::string("closed (") + strerror(err) + "), the HEN did not open it";
+}
+
+// The last `bytes` of a file, from a line start, or empty.
+std::string file_tail(const std::string & path, long bytes) {
+    std::ifstream in(path, std::ios::binary | std::ios::ate);
+    if (!in) {
+        return {};
+    }
+    const long size = (long) in.tellg();
+    const long from = std::max(0L, size - bytes);
+    in.seekg(from);
+    std::string text((size_t) (size - from), '\0');
+    in.read(text.data(), (std::streamsize) text.size());
+    return from > 0 && text.find('\n') != std::string::npos ? text.substr(text.find('\n') + 1) : text;
+}
+
+// The kernel log for debug reports, while Settings allows it. klogsrv (port
+// 3232) sends no backlog, only what comes after a client connects, and the
+// same lines to every client (two PC captures beside the app matched line
+// for line), so a thread keeps a connection from launch and holds the last
+// 1 MiB. Its limits: 1.5 MiB of memory at most, one recv a second when
+// quiet, a reconnect every 5 s when klogsrv is gone, and a failure stops it
+// rather than the app.
+// ponytail: 1 MiB holds a few hours of an idle console; raise it if crashes scroll off
+struct KlogTail {
+    std::atomic<bool> on{ false };
+    std::atomic<int>  generation{ 0 };  // a thread left from an off-and-on again stops
+    std::mutex        mutex;
+    std::string       text;
+    std::string       since;  // when collecting began
+
+    void enable(bool want) {
+        if (want && !on.exchange(true)) {
+            const int g = ++generation;
+            std::thread([this, g] { run(g); }).detach();
+        } else if (!want) {
+            on = false;
+        }
+    }
+
+    std::pair<std::string, std::string> take() {
+        std::lock_guard<std::mutex> lock(mutex);
+        return { since, text };
+    }
+
+    void run(int g) {
+        const auto live = [&] { return on && generation == g; };
+        {
+            char t[32];
+            const time_t now = time(nullptr);
+            std::strftime(t, sizeof(t), "%Y-%m-%d %H:%M:%S", std::localtime(&now));
+            std::lock_guard<std::mutex> lock(mutex);
+            since = t;
+        }
+        while (live()) {
+            const int fd = socket(AF_INET, SOCK_STREAM, 0);
+            sockaddr_in to = {};
+            to.sin_len = sizeof(to);
+            to.sin_family = AF_INET;
+            to.sin_port = htons(3232);
+            to.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+            if (fd >= 0 && connect(fd, (sockaddr *) &to, sizeof(to)) == 0) {
+                timeval tv = { 1, 0 };
+                setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+                char buf[16384];
+                while (live()) {
+                    const ssize_t n = recv(fd, buf, sizeof(buf), 0);
+                    if (n == 0 || (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR)) {
+                        break;  // klogsrv went away: try again below
+                    }
+                    if (n > 0) {
+                        std::lock_guard<std::mutex> lock(mutex);
+                        try {
+                            text.append(buf, (size_t) n);
+                            // Trimmed at 1.5 MiB back to the last 1 MiB, from a line start.
+                            if (text.size() > (3u << 19)) {
+                                const size_t cut = text.size() - (1u << 20);
+                                const size_t nl = text.find('\n', cut);
+                                text.erase(0, nl == std::string::npos ? cut : nl + 1);
+                            }
+                        } catch (const std::exception &) {
+                            text.clear();
+                            on = false;  // out of memory: no kernel log rather than no app
+                        }
+                    }
+                }
+            }
+            if (fd >= 0) {
+                close(fd);
+            }
+            for (int i = 0; i < 10 && live(); i++) {
+                sceKernelUsleep(500000);
+            }
+        }
+    }
+} g_klog;
+
+// A debug report: one text file with what a bug report needs, in the app's
+// folder under debug/, for attaching to an issue (Settings > App > Debug
+// report, or a debug-report request file from the PC). Returns its path, or
+// empty. The logs hold no prompts; settings and downloads hold no tokens.
+std::string write_debug_report(const Live & live, const std::string & data, bool kernel_log) {
+    char stamp[32];
+    const time_t now = time(nullptr);
+    std::strftime(stamp, sizeof(stamp), "%Y%m%d-%H%M%S", std::localtime(&now));
+    const std::string dir = kDir + "/debug";
+    mkdir(dir.c_str(), 0777);
+    const std::string path = dir + "/ps5lm-debug-" + stamp + ".txt";
+    std::ofstream out(path);
+    if (!out) {
+        return {};
+    }
+    const auto section = [&](const char * name) { out << "\n===== " << name << " =====\n"; };
+    out << "PS5LM Plus debug report, " << stamp << "\n"
+        << "\nBefore sharing it: it holds the app's logs and settings, the models and drives it sees, the end of\n"
+           "ShadowMountPlus's log (which lists the games and images it mounts), OnionHEN's app allowlist, and\n"
+           "with Settings > App > Kernel log in reports on, the kernel log (other apps and services, and it\n"
+           "can show network addresses and account IDs). No prompts or tokens. Read it, or ask an LLM to\n"
+           "point out anything personal, and remove what you would rather not post.\n";
+    section("app");
+    out << "version " PS5LM_VERSION "\ntitle " << param_field("titleId") << ", content " << param_field("contentId")
+        << ", downloadDataSize " << param_field("downloadDataSize") << " MiB\n";
+    {
+        uint32_t sdk = 0;
+        size_t   n = sizeof(sdk);
+        sysctlbyname("kern.sdk_version", &sdk, &n, nullptr, 0);
+        char raw[16];
+        std::snprintf(raw, sizeof(raw), "0x%08x", sdk);
+        out << "firmware " << firmware() << " (kern.sdk_version " << raw << ")\n";
+    }
+    const auto choice = read_lines(kStorageChoice);
+    out << "/data " << data << "\napp folder " << kDir << ", storage choice "
+        << (choice.empty() ? "none" : choice[0]) << ", sandbox-test " << (access("/data/PS5LM/sandbox-test", F_OK) == 0 ? "on" : "off")
+        << "\n";
+    {
+        int64_t at = 0;
+        size_t  avail = 0;
+        const int64_t pool = sceKernelGetDirectMemorySize();
+        sceKernelAvailableDirectMemorySize(0, pool, 2 * 1024 * 1024, &at, &avail);
+        char m[96];
+        std::snprintf(m, sizeof(m), "memory: pool %.2f GiB, free %.2f GiB\n", pool / 1073741824.0, avail / 1073741824.0);
+        out << m;
+    }
+    section("payloads (listening on this console)");
+    for (const auto & [port, name] : { std::pair{ 2121, "ftpsrv" }, { 3232, "klogsrv" }, { 9021, "elfldr" },
+                                       { 9100, "ps5-exporter" }, { kPort, "llama-server" } }) {
+        out << port << " " << name << ": " << (port_open(port) ? "open" : "closed") << "\n";
+    }
+    section("server");
+    const char * states[] = { "loading", "ready", "generating", "failed", "no model" };
+    out << "state " << states[(int) live.state] << ", model " << (live.model_label.empty() ? "none" : live.model_label)
+        << "\n";
+    for (const auto & a : live.args) {
+        out << "  " << a << "\n";
+    }
+    section("drives");
+    for (const auto & d : live.drives) {
+        char t[64];
+        std::snprintf(t, sizeof(t), "%.1f of %.1f GiB free", d.free, d.total);
+        out << d.name << ", " << d.models << ": " << (d.total > 0 ? t : "space unknown") << "\n";
+    }
+    section("models");
+    for (const auto & m : live.models) {
+        out << m.file << " (" << m.drive << "): " << (m.fits ? m.plan : "does not fit") << "\n";
+    }
+    const auto file = [&](const char * name, const std::string & p, long bytes) {
+        section(name);
+        const std::string text = file_tail(p, bytes);
+        out << (text.empty() ? "(missing or unreadable)\n" : text);
+    };
+    file("settings.json", kSettings, 16384);
+    file("downloads.json", kDir + "/downloads.json", 16384);
+    file("app.log (the end)", kLog, 262144);
+    file("llama.log (the end)", kLlamaLog, 262144);
+    // What opens /data on homebrew, when this title can read it.
+    file("ShadowMountPlus debug.log (the end)", "/data/shadowmount/debug.log", 32768);
+    section("kernel log (klogsrv)");
+    if (!kernel_log) {
+        out << "not included: Settings > App > Kernel log in reports is off\n";
+    } else {
+        const auto [since, text] = g_klog.take();
+        out << "collected since " << since << (port_open(3232) ? "" : "; klogsrv is not running now (port 3232)")
+            << "\n" << (text.empty() ? "(nothing came)\n" : text);
+    }
+    section("OnionHEN app_jailbreak");
+    bool in = false;
+    for (const auto & line : read_lines("/data/OnionHEN/config.ini")) {
+        if (!line.empty() && line[0] == '[') {
+            in = line == "[app_jailbreak]";
+        } else if (in) {
+            out << line << "\n";
+        }
+    }
+    out.close();
+    return out ? path : std::string();
 }
 
 // A quit request from the PC (scripts/ps5lm-app.sh close): the app ends
@@ -720,6 +918,7 @@ int main(int, char **) {
     }
 
     models.settings = load_settings(kSettings.c_str());
+    g_klog.enable(models.settings.kernel_log);
     const bool sandboxed = kDir != "/data/PS5LM";
     if (sandboxed) {
         set_internal_drive("App storage", kModels, "/mnt/sandbox/download/" + param_field("titleId"));
@@ -938,6 +1137,7 @@ int main(int, char **) {
             // reads every model's header, seconds with a USB drive.
             const Settings was = models.settings;
             models.settings = dash.settings();
+            g_klog.enable(models.settings.kernel_log);
             save_settings(kSettings.c_str(), models.settings);
             if (was.ctx_cap != models.settings.ctx_cap || was.kv_type != models.settings.kv_type) {
                 models.rescan(stats);
@@ -988,6 +1188,8 @@ int main(int, char **) {
                 req = { Dashboard::Request::load, p };
             } else if (!take_request_file((kDir + "/unload").c_str()).empty()) {
                 req = { Dashboard::Request::unload, "" };
+            } else if (!take_request_file((kDir + "/debug-report").c_str()).empty()) {
+                req = { Dashboard::Request::debug_report, "" };
             } else if (std::string u = take_request_file((kDir + "/fetch").c_str()); !u.empty()) {
                 std::thread(probe_fetch, u).detach();
             } else if (!take_request_file((kDir + "/bench-write").c_str()).empty()) {
@@ -995,6 +1197,23 @@ int main(int, char **) {
             } else if (std::string q = take_request_file((kDir + "/search").c_str()); !q.empty()) {
                 market.search(q == "-" ? std::string() : q);  // a query typed on the PC
             }
+        }
+        if (req.kind == Dashboard::Request::debug_report) {
+            if (dash.settings().debug_report_seen && !models.settings.debug_report_seen) {
+                models.settings.debug_report_seen = true;  // the popup was confirmed: not again
+                save_settings(kSettings.c_str(), models.settings);
+            }
+            const std::string p = write_debug_report(live, data, models.settings.kernel_log);
+            // Over FTP the app's own space is under its sandbox.
+            const std::string ftp = p.rfind("/download0/", 0) == 0
+                                        ? "/mnt/sandbox/" + param_field("titleId") + "_000" + p
+                                        : p;
+            dash.set_debug_note(p.empty() ? "Could not save it" : "Saved " + p.substr(p.find_last_of('/') + 1));
+            const bool klog = models.settings.kernel_log;
+            notify(p.empty() ? "PS5LM Plus: the debug report could not be saved"
+                             : ("PS5LM Plus: debug report saved" + std::string(klog ? ", with the kernel log" : "") +
+                                ". Over FTP: " + ftp).c_str());
+            std::printf("ps5lm-app: debug report %s\n", p.empty() ? "failed" : ftp.c_str());
         }
         if (req.kind == Dashboard::Request::storage_app) {
             std::ofstream(kStorageChoice) << "app\n";

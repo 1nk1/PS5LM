@@ -53,6 +53,8 @@ class Dashboard {
         busy_text_ = std::move(text);
     }
     bool busy() const { return !busy_title_.empty(); }
+    // The last debug report, for its row in Settings: where it went, or why not.
+    void set_debug_note(std::string note) { debug_note_ = std::move(note); }
     // The first start without /data: get full storage and come back, or go
     // on in the app's own space (`room`, from param.json). Over everything
     // until answered, with storage_hen or storage_app.
@@ -85,7 +87,7 @@ class Dashboard {
     struct Request {
         enum Kind { none, load, unload, settings, clear_scratch, market_search, market_open, market_plan, market_download,
                     market_download_unload, download_pause, download_resume, download_remove, storage_hen,
-                    storage_app } kind = none;
+                    storage_app, debug_report } kind = none;
         std::string path;   // a model, a market query, or the folder a download goes to (empty: the setting)
         int repo = -1, file = -1;  // a market file, or (repo) a download's index
     };
@@ -130,7 +132,12 @@ class Dashboard {
     bool  storage_open_ = false;
     int   storage_choice_ = 0;     // 0 the HEN, 1 the app's own space
     std::string storage_title_, storage_room_, storage_firmware_;
+    std::string debug_note_ = "Logs, settings and the console's state in one file";
     void draw_storage(hui::gfx::DrawList & list) const;
+    bool  debug_confirm_ = false;  // the popup before the first debug report
+    bool  klog_confirm_ = false;   // the popup before Kernel log in reports goes on
+    void draw_notice(hui::gfx::DrawList & list, const char * title, const char * head, const char * body,
+                     const char * tip, const char * yes, const char * no) const;
     void update_storage(const hui::InputFrame & input, hui::ui::Feedback & feedback);
     int   focus_ = 0;
     int   came_from_ = -1;
