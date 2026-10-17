@@ -1,11 +1,11 @@
 # The PS5LM payload (archived)
 
 This is the README of the original PS5LM payload by [Mert Cobanov](https://github.com/cobanov),
-kept as it was when this fork moved to the native app. The payload still works and is
-maintained upstream at [cobanov/PS5LM](https://github.com/cobanov/PS5LM); this fork's
-README covers the native app.
+kept as it was when PS5LM Plus moved to the native app. The payload still works and is
+maintained in the original project, [cobanov/PS5LM](https://github.com/cobanov/PS5LM);
+this repository's README covers the native app.
 
-## The payload (upstream v0.1)
+## The payload (v0.1)
 
 The original PS5LM is a payload that needs no install: one `ps5lm.elf` opens a model library in the PS5's browser, for small models (up to 1.6 GB, Qwen3.5 0.8B and 2B). See [docs/ROADMAP.md](ROADMAP.md) and [docs/CONSOLE.md](CONSOLE.md).
 
@@ -41,7 +41,7 @@ brew install llvm@21 lld socat cmake ninja
 # Debian / Ubuntu
 sudo apt install clang-18 lld-18 socat cmake ninja-build
 
-git clone --recursive https://github.com/abhi245y/PS5LM
+git clone --recursive https://github.com/abhi245y/PS5LM-Plus
 cd PS5LM
 scripts/setup-sdk.sh
 source scripts/env.sh
