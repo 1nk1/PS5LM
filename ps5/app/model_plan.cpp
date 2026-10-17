@@ -275,6 +275,9 @@ double kv_bytes_per_token(const ModelInfo & m, const std::string & type) {
 // out (context, cache type) are not here.
 const std::vector<Preset> & presets() {
     static const std::vector<Preset> table = {
+        // Before qwen3.8, which it is built on: Prism's sampling from the model card.
+        { "bonsai", "Ternary Bonsai 2", "Qwen 3.8 27B in ternary weights; Q2_0 from scripts/pq2-to-q2_0.py",
+          { "--temp", "1.0", "--top-p", "0.95", "--top-k", "20", "--min-p", "0.05" } },
         { "qwen3.8", "Qwen 3.8", "27B hybrid Gated DeltaNet; UD-Q2_K_XL holds 64k context on the GPU",
           { "--temp", "0.6", "--top-p", "0.95", "--top-k", "20", "--min-p", "0" } },
         { "qwen3.6", "Qwen 3.6", "MoE 35B-A3B or dense 27B; the MoE decodes fastest",
