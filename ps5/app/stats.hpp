@@ -128,6 +128,11 @@ class StatsCollector {
 // ps5-exporter's metrics (asked for here, or text already fetched).
 std::vector<Drive> mounted_drives();
 std::vector<Drive> drives_from_metrics(const std::string & text);
+// The first drive: internal storage (its space is /user's), or the app's own
+// space when /data is closed (its space is the download data image's, which
+// ps5-exporter lists as /mnt/sandbox/download/<title>). Set once, before the
+// collector starts.
+void set_internal_drive(std::string name, std::string models, std::string mount);
 
 // The kind of drive holding `path`: "Internal storage", "M.2 drive", "USB drive".
 std::string drive_name(const std::string & path);

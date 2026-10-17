@@ -83,10 +83,27 @@ ps5-exporter comes inside the app; you do not load it yourself.
 
 1. Download `ps5lm-app-vX.Y.Z.zip` from this fork's [releases](https://github.com/abhi245y/PS5LM/releases) and check it against its `.sha256`.
 2. Unzip it and copy the `PPSA99581` folder to `/data/homebrew/PPSA99581` over FTP. ShadowMountPlus adds **PS5LM Plus** to the home screen.
-3. Start PS5LM. Pick a model in **Get models**, or copy a `.gguf` to `/data/PS5LM/models`, or to `PS5LM/models` on a USB drive (exFAT) or the M.2 drive.
+3. Start PS5LM. Pick a model in **Get models**, or copy a `.gguf` to `/data/PS5LM/models`, to `/data/homebrew/PPSA99581/models`, or to `PS5LM/models` on a USB drive (exFAT) or the M.2 drive.
 4. Choose the model in the library. Once the dashboard says Ready, open `http://<console IP>:8081` on a phone or computer.
 
 To update, close the app and copy the new `PPSA99581` folder over the old one. Settings, models and downloads stay in `/data/PS5LM`.
+
+A title sees only its own folder unless something opens the console's storage to it. On the console
+PS5LM is developed on (13.00), ShadowMountPlus v1.7-beta5fix1 does so before the title starts, with
+or without a HEN: its `debug.log` shows `[FAKELIB] directory mounted for PPSA99581: /data` (and
+`/mnt/usb0`). OnionHEN does so on request: PS5LM asks when it starts
+(`/download0/etahen_jailbreak`), which OnionHEN honours for a title on its app jailbreak allowlist,
+so add `PPSA99581` to `app_jailbreak.exact_title_ids` in `/data/OnionHEN/config.ini`.
+
+When storage stays closed, the first start says so, with the firmware, and asks which way to go:
+get full storage (a current ShadowMountPlus, or the OnionHEN allowlist) and open the app again, or
+go on in the app's own space. Then settings, the log and downloads stay in the app's own space,
+`/download0` (over FTP: `/mnt/sandbox/PPSA99581_000/download0/PS5LM`), whose size is
+`downloadDataSize` in `sce_sys/param.json`; models copied to `/data/homebrew/PPSA99581/models`
+load too. USB and M.2 drives stay out of reach. An update that raises `downloadDataSize` grows the
+space at the next start and keeps what is in it; lowering it frees nothing (tested on 13.00).
+Uninstalling the app deletes the models in both places, so update by copying the new folder over
+the old one.
 
 Which models fit is in [docs/MODELS.md](docs/MODELS.md); anything llama.cpp runs works if the library shows LOAD.
 

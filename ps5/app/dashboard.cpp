@@ -242,7 +242,9 @@ void Dashboard::update(const hui::InputFrame & raw, float dt, ui::Feedback & fee
     // L1/R1 change the page, unless an overlay has the focus.
     const bool overlay = library_open_ || details_open_;
     const int  step = input.is_pressed(Action::page_next) ? 1 : input.is_pressed(Action::page_prev) ? -1 : 0;
-    if (step != 0 && !overlay) {
+    if (storage_open_) {
+        update_storage(input, feedback);
+    } else if (step != 0 && !overlay) {
         const int next = page_ + step;
         if (next >= 0 && next < kPages) {
             page_from_ = page_;
@@ -1182,7 +1184,9 @@ void Dashboard::draw_library(gfx::DrawList & list, std::uint32_t glass) const {
     draw_panel(list, panel, 40, 1.0f, kLime);
     caps(list, f, "MODEL LIBRARY", panel.x + 56, panel.y + 60, 20, kLime);
     ui::text(list, f.regular,
-             f.regular.font->fit("Settings fit the memory free now. Models go in /data/PS5LM/models, or PS5LM/models on USB.",
+             f.regular.font->fit(settings_.download_dir.rfind("/download0", 0) == 0
+                                     ? "Settings fit the memory free now. Models go in the app's own space, or in its homebrew folder."
+                                     : "Settings fit the memory free now. Models go in /data/PS5LM/models, or PS5LM/models on USB.",
                                  20, panel.w - 112),
              panel.x + 56, panel.y + 98, 20, kInk.with_alpha(kMuted));
 
@@ -2027,7 +2031,11 @@ void Dashboard::draw(DashboardFrame & frame) const {
         draw_library(frame.overlay, frame.glass_texture);
         draw_details(frame.overlay, frame.glass_texture);
     }
-    draw_hints(frame);
+    if (storage_open_) {
+        draw_storage(frame.overlay);  // with its own hint: the page's buttons wait
+    } else {
+        draw_hints(frame);
+    }
     if (busy()) {
         draw_busy(frame.overlay);  // the overlay draws last, over the library too
     }
@@ -2050,6 +2058,62 @@ void Dashboard::draw_busy(gfx::DrawList & list) const {
         ui::text(list, f.regular, f.regular.font->fit(busy_text_, 21, d.w - 200), d.x + 160, cy + 30, 21,
                  kInk.with_alpha(kMuted));
     }
+}
+
+void Dashboard::update_storage(const hui::InputFrame & input, ui::Feedback & feedback) {
+    if (input.nav == Direction::up || input.nav == Direction::down) {
+        const int next = input.nav == Direction::down ? 1 : 0;
+        if (next != storage_choice_) {
+            storage_choice_ = next;
+            feedback.play(hui::audio::Cue::focus);
+        }
+    } else if (input.is_pressed(Action::confirm)) {
+        storage_open_ = false;
+        request_ = { storage_choice_ == 0 ? Request::storage_hen : Request::storage_app, "" };
+        feedback.play(hui::audio::Cue::select);
+    }
+}
+
+// The two ways on without /data, each with what it gives and costs.
+void Dashboard::draw_storage(gfx::DrawList & list) const {
+    const ui::Fonts & f = fonts_;
+    list.rounded_rect({ 0, 0, 1920, 1080 }, 0, kBlack.with_alpha(0.75f));
+    const Rect d{ 960 - 680, 540 - 340, 1360, 680 };
+    list.shadow({ d.x, d.y + 18, d.w, d.h }, 28, 40, kBlack.with_alpha(0.6f));
+    draw_panel(list, d, 28, 1.0f, kAmber);
+    const float x = d.x + 56, w = d.w - 112;
+    caps(list, f, "STORAGE", x, d.y + 64, 17, kAmber);
+    ui::text(list, f.semibold, "PS5LM Plus cannot reach this console's storage", x, d.y + 112, 34, kInk);
+    const std::string why = "Nothing on this console opened /data to the app" +
+                            (storage_firmware_.empty() ? std::string() : " (firmware " + storage_firmware_ + ")") +
+                            ". Choose how to go on.";
+    ui::text(list, f.regular, why, x, d.y + 150, 21, kInk.with_alpha(kMuted));
+    const std::string tid = storage_title_;
+    const std::string options[2][4] = {
+        { "Get full storage, then open PS5LM Plus again",
+          "Full access: internal storage, USB and M.2 drives, and downloads to any of them.",
+          "ShadowMountPlus v1.7-beta5fix1 opens /data and USB to homebrew itself: update an older one.",
+          "Or with OnionHEN, add " + tid + " to app_jailbreak.exact_title_ids in /data/OnionHEN/config.ini." },
+        { "Go on with the app's own space",
+          "Settings and downloads stay in the app's own space, " + storage_room_ + ", set by downloadDataSize.",
+          "Models copied over FTP to /data/homebrew/" + tid + "/models load too.",
+          "No USB or M.2 drives. Uninstalling the app deletes the models in both; update by copying over it." },
+    };
+    for (int i = 0; i < 2; ++i) {
+        const Rect r{ x, d.y + 190 + i * 210.0f, w, 190 };
+        const bool on = i == storage_choice_;
+        list.rounded_rect(r, 20, on ? kAmber.with_alpha(0.14f) : kInk.with_alpha(0.04f));
+        list.bordered_rect(r, 20, kClear, 2.0f, on ? kAmber : kInk.with_alpha(0.1f));
+        ui::text(list, f.semibold, options[i][0], r.x + 32, r.y + 50, 26, kInk);
+        for (int k = 1; k < 4; ++k) {
+            ui::text(list, f.regular, f.regular.font->fit(options[i][k], 20, r.w - 64), r.x + 32, r.y + 62 + k * 32, 20,
+                     kInk.with_alpha(on ? 0.88f : kMuted));
+        }
+    }
+    ui::text(list, f.regular,
+             storage_choice_ == 0 ? "Up and down to choose. Cross closes the app; this returns until storage opens."
+                                  : "Up and down to choose. Cross goes on, and the app remembers it.",
+             x, d.y + d.h - 34, 20, kInk.with_alpha(kMuted));
 }
 
 }  // namespace ps5lm

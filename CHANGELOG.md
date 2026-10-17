@@ -19,6 +19,25 @@ v0.1.x are the upstream payload releases by cobanov.
 - `probes/sysmemprobe`: a read-only payload listing every process by
   resident size and the payload budget's limits (`budget_get`).
 
+### Fixed
+- Storage on consoles whose HEN does not open `/data` to the title on its own (OnionHEN;
+  cobanov/PS5LM#16). The app now asks when it starts, in every process (the restart for a model
+  starts a new one), by writing `{"PID":n}` to `/download0/etahen_jailbreak`, which OnionHEN
+  honours for a title on its app jailbreak allowlist. When `/data` stays closed the app keeps its
+  state and log in its own `/download0` (`/mnt/sandbox/PPSA99581_000/download0/PS5LM` over FTP)
+  instead of starting without them; it waits 10 s for the HEN the first time and 2 s after a
+  refusal. Models in the title's own folder, `/data/homebrew/PPSA99581/models`, are found with or
+  without the HEN's help.
+- A first-start choice when `/data` stays closed, with the firmware shown (and logged at every
+  start): get full storage and come back, through a current ShadowMountPlus (v1.7-beta5fix1 mounts
+  `/data` and `/mnt/usb0` into homebrew titles itself) or the OnionHEN allowlist (the app closes;
+  the choice returns until storage opens), or go on in the app's own space. On that route,
+  downloads go to `/download0/PS5LM/models`, shown as **App storage** with its real size and free
+  space (ps5-exporter lists the download data image as `/mnt/sandbox/download/<title>`), so a
+  download that does not fit is refused before it starts. Title-folder models are listed as
+  **App folder**.
+- `/data/PS5LM` is created when missing, not only `models` under it.
+
 ## [0.8.3] - 2026-10-13
 
 ### Changed

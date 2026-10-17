@@ -14,8 +14,10 @@
 
 #include <pthread.h>
 #include <fcntl.h>
+#include <dirent.h>
 #include <sys/stat.h>
 #include <sys/statvfs.h>
+#include <sys/sysctl.h>
 #include <unistd.h>
 
 #include <algorithm>
@@ -97,20 +99,53 @@ namespace {
 
 using namespace ps5lm;
 
-constexpr const char * kLog         = "/data/PS5LM/app.log";
-constexpr const char * kArgs        = "/data/PS5LM/app-args.txt";
-constexpr const char * kChoice      = "/data/PS5LM/model.txt";
-constexpr const char * kQuit        = "/data/PS5LM/quit";
-constexpr const char * kSettings    = "/data/PS5LM/settings.json";
-constexpr const char * kScratch     = "/data/PS5LM/scratch";
 // The file tools only: a title cannot start processes (no shell command).
 constexpr const char * kTools       = "read_file,write_file,edit_file,file_glob_search,grep_search,get_info";
-constexpr const char * kLlamaLog    = "/data/PS5LM/llama.log";
-constexpr const char * kModels      = "/data/PS5LM/models";
 constexpr const char * kAssets      = "/app0/assets";
 constexpr int          kPort        = 8081;
-const std::vector<std::string> kModelDirs = { kModels, "/mnt/ext0/PS5LM/models", "/mnt/usb0/PS5LM/models",
-                                              "/mnt/usb1/PS5LM/models", "/mnt/usb0", "/mnt/usb1" };
+
+// The app's folder: /data/PS5LM once the HEN opens /data to the title, else
+// its own /download0 (a 256 MiB image: room for the state, not for models).
+std::string kDir, kLog, kArgs, kChoice, kQuit, kSettings, kScratch, kLlamaLog, kModels;
+std::vector<std::string> kModelDirs;
+const std::string kStorageModels = "/download0/PS5LM/models";
+// "app" once the user chose to go on without the HEN (the startup prompt).
+constexpr const char * kStorageChoice = "/download0/PS5LM/storage.txt";
+std::vector<std::string> read_lines(const char * path);
+
+void set_dir(const std::string & dir) {
+    kDir      = dir;
+    kLog      = dir + "/app.log";
+    kArgs     = dir + "/app-args.txt";
+    kChoice   = dir + "/model.txt";
+    kQuit     = dir + "/quit";
+    kSettings = dir + "/settings.json";
+    kScratch  = dir + "/scratch";
+    kLlamaLog = dir + "/llama.log";
+    kModels   = dir + "/models";
+    // /app0/models is the title's own folder (/data/homebrew/<title>/models
+    // over FTP): a sandboxed title reads it without any HEN.
+    kModelDirs = { kModels, "/app0/models", "/mnt/ext0/PS5LM/models", "/mnt/usb0/PS5LM/models",
+                   "/mnt/usb1/PS5LM/models", "/mnt/usb0", "/mnt/usb1" };
+    if (kModels != kStorageModels) {
+        kModelDirs.push_back(kStorageModels);  // downloaded there before the HEN opened /data
+    }
+}
+
+// A field of /app0/sce_sys/param.json, crudely: the title's own file, one
+// field a line.
+std::string param_field(const std::string & key) {
+    for (const auto & line : read_lines("/app0/sce_sys/param.json")) {
+        const size_t at = line.find("\"" + key + "\"");
+        if (at == std::string::npos) {
+            continue;
+        }
+        std::string v = line.substr(line.find(':', at) + 1);
+        std::erase_if(v, [](char c) { return c == ' ' || c == '"' || c == ','; });
+        return v;
+    }
+    return {};
+}
 
 // The last lines of a log, up to about 64 KiB of it, oldest first.
 std::vector<std::string> tail_lines(const char * path) {
@@ -136,7 +171,7 @@ std::vector<std::string> tail_lines(const char * path) {
 // Probe: download a URL over HTTPS to /data/PS5LM/fetch.out, logging the
 // status, size and speed (scripts/ps5lm-app.sh fetch <url>).
 void probe_fetch(std::string url) {
-    FILE * out = std::fopen("/data/PS5LM/fetch.out", "wb");
+    FILE * out = std::fopen((kDir + "/fetch.out").c_str(), "wb");
     const FetchResult r = https_get(url, "", [&](const char * p, size_t n) { return out && std::fwrite(p, 1, n, out) == n; });
     if (out) {
         std::fclose(out);
@@ -151,13 +186,13 @@ void probe_fetch(std::string url) {
 void probe_write() {
     const size_t total = 128u << 20;
     std::vector<char> buf(8u << 20, 'x');
-    const char * dirs[] = { "/data/PS5LM", "/mnt/usb0" };
-    for (const char * dir : dirs) {
+    const std::string dirs[] = { kDir, "/mnt/usb0" };
+    for (const std::string & dir : dirs) {
         struct statvfs v = {};
-        if (statvfs(dir, &v) != 0) {
+        if (statvfs(dir.c_str(), &v) != 0) {
             continue;
         }
-        const std::string path = std::string(dir) + "/write-bench.tmp";
+        const std::string path = dir + "/write-bench.tmp";
         struct Method {
             const char * name;
             size_t       chunk;
@@ -192,7 +227,7 @@ void probe_write() {
                 }
             }
             const double s = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
-            std::printf("ps5lm-app: write-bench %s %s: %s, %.1f MB/s\n", dir, m.name, ok ? "ok" : strerror(errno),
+            std::printf("ps5lm-app: write-bench %s %s: %s, %.1f MB/s\n", dir.c_str(), m.name, ok ? "ok" : strerror(errno),
                         ok ? total / 1e6 / s : 0.0);
             unlink(path.c_str());
         }
@@ -223,14 +258,81 @@ void notify(const char * text) {
     sceKernelSendNotificationRequest(0, &request, sizeof(request), 0);
 }
 
+// A title sees only its own /app0 and /download0; /data has to be opened to
+// it. On the console this was built on (13.00), ShadowMountPlus
+// v1.7-beta5fix1 mounts /data and /mnt/usb0 into the title's sandbox before
+// it starts, HEN or not ("[FAKELIB] directory mounted" in its debug.log).
+// OnionHEN opens it on request: {"PID":n} in /download0/etahen_jailbreak, for
+// a title on its allowlist (#16); etaHEN's request allowlist is fixed,
+// without PS5LM. Every process asks, since the restart for a model
+// (LoadExec) starts a new one, sandboxed again. Open means the models folder
+// lists, which the scan needs: ShadowMountPlus can mount /data so that files
+// open but folders do not list.
+bool data_open() {
+    mkdir("/data/PS5LM", 0777);
+    mkdir("/data/PS5LM/models", 0777);
+    DIR * d = opendir("/data/PS5LM/models");
+    if (!d) {
+        return false;
+    }
+    closedir(d);
+    const int fd = open("/data/PS5LM/.probe", O_WRONLY | O_CREAT | O_TRUNC, 0666);
+    if (fd < 0) {
+        return false;
+    }
+    const bool ok = write(fd, "1", 1) == 1;
+    close(fd);
+    unlink("/data/PS5LM/.probe");
+    return ok;
+}
+
+// The firmware, "13.00", from kern.sdk_version (0x13000000 there), or empty.
+// sceKernelGetSystemSwVersion is no use for it: 13.590.001 on 13.00.
+std::string firmware() {
+    uint32_t v = 0;
+    size_t   n = sizeof(v);
+    if (sysctlbyname("kern.sdk_version", &v, &n, nullptr, 0) != 0 || v == 0) {
+        return {};
+    }
+    char text[16];
+    std::snprintf(text, sizeof(text), "%x.%02x", v >> 24, (v >> 16) & 0xff);
+    return text;
+}
+
+// How /data ended up, for the log. A refusal is remembered in /download0:
+// the next starts (one per model change) still ask, but wait 2 s, not 10.
+std::string open_data() {
+    constexpr const char * kRefused = "/download0/PS5LM/data-closed";
+    if (access("/data/PS5LM/sandbox-test", F_OK) != 0 && data_open()) {
+        unlink(kRefused);
+        return "open";
+    }
+    const int err = errno;
+    const bool again = access(kRefused, F_OK) == 0;
+    // ponytail: a flag file to walk the sandboxed route on a console whose HEN opens /data
+    const bool test = access("/data/PS5LM/sandbox-test", F_OK) == 0;
+    std::ofstream("/download0/etahen_jailbreak.tmp") << "{\"PID\":" << getpid() << "}\n";
+    rename("/download0/etahen_jailbreak.tmp", "/download0/etahen_jailbreak");
+    for (int i = 1; i <= (again ? 8 : 40); i++) {  // OnionHEN answered in about 3 s (#16)
+        sceKernelUsleep(250000);
+        if (!test && data_open()) {
+            unlink(kRefused);
+            return "opened by the HEN after " + std::to_string(i / 4.0).substr(0, 4) + " s";
+        }
+    }
+    mkdir("/download0/PS5LM", 0777);
+    std::ofstream(kRefused) << "1\n";
+    return std::string("closed (") + strerror(err) + "), the HEN did not open it";
+}
+
 // A quit request from the PC (scripts/ps5lm-app.sh close): the app ends
 // itself the way the system expects; killing a title that is rendering has
 // been followed by lost consoles (ps5-homebrew-ui's AGENTS.md).
 void quit_if_asked() {
-    if (access(kQuit, F_OK) != 0) {
+    if (access(kQuit.c_str(), F_OK) != 0) {
         return;
     }
-    unlink(kQuit);
+    unlink(kQuit.c_str());
     std::printf("ps5lm-app: quit requested\n");
     std::fflush(nullptr);
     sceSystemServiceLoadExec("exit", nullptr);
@@ -481,7 +583,7 @@ struct Models {
     void start(const std::string & path, std::vector<std::string> args, StatsCollector & stats, const Live & model_part) {
         // llama.cpp's own log, written as it goes (it survives a crash), and
         // the metrics the dashboard reads.
-        args.insert(args.begin(), { "--log-file", "/data/PS5LM/llama.log" });
+        args.insert(args.begin(), { "--log-file", kLlamaLog });
         if (std::find(args.begin(), args.end(), "--metrics") == args.end()) {
             args.push_back("--metrics");
         }
@@ -490,8 +592,8 @@ struct Models {
         if (settings.tools && std::find(args.begin(), args.end(), "--tools") == args.end()) {
             std::error_code ec;
             std::filesystem::create_directories(kScratch, ec);
-            setenv("LLAMA_TOOLS_ROOT", kScratch, 1);
-            chdir(kScratch);
+            setenv("LLAMA_TOOLS_ROOT", kScratch.c_str(), 1);
+            chdir(kScratch.c_str());
             args.insert(args.end(), { "--tools", kTools });
         }
         for (const auto & a : args) {
@@ -548,11 +650,16 @@ bool load_font(hui::gfx::Renderer & renderer, const char * name, hui::gfx::Font 
 }  // namespace
 
 int main(int, char **) {
+    // /data first: the log, the settings and the model to load live there.
+    const std::string data = open_data();
+    set_dir(data.rfind("closed", 0) == 0 ? "/download0/PS5LM" : "/data/PS5LM");
+    mkdir(kDir.c_str(), 0777);
+    mkdir(kModels.c_str(), 0777);
     // stdout and stderr to a file the PC can fetch over FTP.
-    if (std::freopen(kLog, "w", stdout) != nullptr) {
+    if (std::freopen(kLog.c_str(), "w", stdout) != nullptr) {
         setvbuf(stdout, nullptr, _IOLBF, 0);
     }
-    if (std::freopen(kLog, "a", stderr) != nullptr) {
+    if (std::freopen(kLog.c_str(), "a", stderr) != nullptr) {
         setvbuf(stderr, nullptr, _IONBF, 0);
     }
     std::printf("ps5lm-app: version " PS5LM_VERSION "\n");
@@ -565,12 +672,21 @@ int main(int, char **) {
         std::printf("ps5lm-app: direct memory %.2f GiB, flexible %.2f GiB configured, %.2f GiB free\n",
                     sceKernelGetDirectMemorySize() / 1073741824.0, flex_cfg / 1073741824.0, flex_free / 1073741824.0);
     }
+    {
+        ps5_kernel_sw_version sw = {};
+        sw.size = sizeof(sw);
+        uint32_t sdk = 0;
+        size_t   n = sizeof(sdk);
+        sysctlbyname("kern.sdk_version", &sdk, &n, nullptr, 0);
+        std::printf("ps5lm-app: firmware %s (kern.sdk_version 0x%08x, system software %s)\n", firmware().c_str(), sdk,
+                    sceKernelGetSystemSwVersion(&sw) == 0 ? sw.text : "?");
+    }
+    std::printf("ps5lm-app: /data %s; the app's folder is %s\n", data.c_str(), kDir.c_str());
     // One device-local heap over the whole pool (RADV splits an APU's 2/3 to
     // 1/3), and a HOME for llama.cpp, which throws without one.
     setenv("radv_enable_unified_heap_on_apu", "true", 1);
-    setenv("HOME", "/data/PS5LM", 0);
-    setenv("LLAMA_CACHE", "/data/PS5LM/cache", 0);
-    mkdir(kModels, 0777);
+    setenv("HOME", kDir.c_str(), 0);
+    setenv("LLAMA_CACHE", (kDir + "/cache").c_str(), 0);
     std::printf("ps5lm-app: start\n");
 
     // The screen first: it takes from the same memory as the model.
@@ -603,9 +719,16 @@ int main(int, char **) {
         }
     }
 
+    models.settings = load_settings(kSettings.c_str());
+    const bool sandboxed = kDir != "/data/PS5LM";
+    if (sandboxed) {
+        set_internal_drive("App storage", kModels, "/mnt/sandbox/download/" + param_field("titleId"));
+        if (models.settings.download_dir.rfind("/data/", 0) == 0) {
+            models.settings.download_dir = kModels;  // the only place a sandboxed title can write
+        }
+    }
     StatsCollector stats;
     stats.start(kPort);
-    models.settings = load_settings(kSettings);
     models.scan(stats);
 
     // Which model: app-args.txt verbatim, else model.txt, which the library
@@ -613,7 +736,7 @@ int main(int, char **) {
     // once, else the default model when Settings asks for it at launch. A
     // plain launch otherwise loads nothing and opens the library.
     Live model_part;
-    std::vector<std::string> args = read_lines(kArgs);
+    std::vector<std::string> args = read_lines(kArgs.c_str());
     std::string path;
     if (!args.empty()) {
         const auto m = std::find(args.begin(), args.end(), "-m");
@@ -626,8 +749,8 @@ int main(int, char **) {
         model_part.args = args;
         std::printf("ps5lm-app: app-args.txt overrides the planner\n");
     } else {
-        auto chosen = read_lines(kChoice);
-        unlink(kChoice);
+        auto chosen = read_lines(kChoice.c_str());
+        unlink(kChoice.c_str());
         if (chosen.empty() && models.settings.auto_load && !models.settings.default_model.empty()) {
             chosen = { models.settings.default_model };  // "none" after an unload keeps it from coming back
         }
@@ -665,10 +788,15 @@ int main(int, char **) {
     market.start(models.budget_gib);
     int  saved_seen = 0;  // downloads finished, as last seen
     dash.set_settings(models.settings);
+    if (sandboxed && read_lines(kStorageChoice).empty()) {
+        const long mib = std::strtol(param_field("downloadDataSize").c_str(), nullptr, 10);
+        dash.ask_storage(param_field("titleId"),
+                         mib >= 1024 ? std::to_string(mib / 1024) + " GiB" : std::to_string(mib) + " MiB", firmware());
+    }
     bool      library_shown = false;  // opened once at launch when no model is loaded
     bool      scratch_warned = false;
     // Downloads left queued or running carry on, on their own page.
-    unlink("/data/PS5LM/download.txt");  // the queue file replaced this one (v0.7.0)
+    unlink((kDir + "/download.txt").c_str());  // the queue file replaced this one (v0.7.0)
     market.load_queue();
     for (const auto & d : market.snapshot().downloads) {
         // Running already, maybe: the queue's thread starts it at once.
@@ -717,7 +845,7 @@ int main(int, char **) {
         // testing the screens without a controller in hand.
         hui::InputFrame in = input;
         if (n % 20 == 10) {
-            const std::string key = take_request_file("/data/PS5LM/press");
+            const std::string key = take_request_file((kDir + "/press").c_str());
             const struct {
                 const char *   name;
                 hui::Action    action;
@@ -759,7 +887,7 @@ int main(int, char **) {
         // The scratch folder: its size for the dashboard, and one warning each
         // time it grows past the limit.
         if (n % 600 == 300) {
-            const double gib = folder_bytes(kScratch) / 1073741824.0;
+            const double gib = folder_bytes(kScratch.c_str()) / 1073741824.0;
             stats.set_scratch(gib);
             const bool over = gib > models.settings.scratch_limit_gib;
             if (over && !scratch_warned) {
@@ -781,7 +909,7 @@ int main(int, char **) {
             dash.set_market(std::move(mv));
         }
         if (dash.page() == Dashboard::kLogsPage && n % 60 == 0) {
-            dash.set_logs(tail_lines(kLog), tail_lines(kLlamaLog));
+            dash.set_logs(tail_lines(kLog.c_str()), tail_lines(kLlamaLog.c_str()));
         }
 
         // A settings rescan in the background: say so until it lands.
@@ -810,7 +938,7 @@ int main(int, char **) {
             // reads every model's header, seconds with a USB drive.
             const Settings was = models.settings;
             models.settings = dash.settings();
-            save_settings(kSettings, models.settings);
+            save_settings(kSettings.c_str(), models.settings);
             if (was.ctx_cap != models.settings.ctx_cap || was.kv_type != models.settings.kv_type) {
                 models.rescan(stats);
             }
@@ -850,23 +978,30 @@ int main(int, char **) {
             for (const auto & e : std::filesystem::directory_iterator(kScratch, ec)) {
                 std::filesystem::remove_all(e.path(), ec);
             }
-            stats.set_scratch(folder_bytes(kScratch) / 1073741824.0);
+            stats.set_scratch(folder_bytes(kScratch.c_str()) / 1073741824.0);
             notify("PS5LM Plus: scratch folder cleared");
             std::printf("ps5lm-app: scratch folder cleared\n");
         }
         // The same requests from the PC (scripts/ps5lm-app.sh load|unload).
         if (n % 60 == 30 && req.kind == Dashboard::Request::none) {
-            if (std::string p = take_request_file("/data/PS5LM/load"); !p.empty()) {
+            if (std::string p = take_request_file((kDir + "/load").c_str()); !p.empty()) {
                 req = { Dashboard::Request::load, p };
-            } else if (!take_request_file("/data/PS5LM/unload").empty()) {
+            } else if (!take_request_file((kDir + "/unload").c_str()).empty()) {
                 req = { Dashboard::Request::unload, "" };
-            } else if (std::string u = take_request_file("/data/PS5LM/fetch"); !u.empty()) {
+            } else if (std::string u = take_request_file((kDir + "/fetch").c_str()); !u.empty()) {
                 std::thread(probe_fetch, u).detach();
-            } else if (!take_request_file("/data/PS5LM/bench-write").empty()) {
+            } else if (!take_request_file((kDir + "/bench-write").c_str()).empty()) {
                 std::thread(probe_write).detach();
-            } else if (std::string q = take_request_file("/data/PS5LM/search"); !q.empty()) {
+            } else if (std::string q = take_request_file((kDir + "/search").c_str()); !q.empty()) {
                 market.search(q == "-" ? std::string() : q);  // a query typed on the PC
             }
+        }
+        if (req.kind == Dashboard::Request::storage_app) {
+            std::ofstream(kStorageChoice) << "app\n";
+        } else if (req.kind == Dashboard::Request::storage_hen) {
+            // Closed, for the HEN to be set up; the next start asks again.
+            std::fflush(nullptr);
+            sceSystemServiceLoadExec("exit", nullptr);
         }
         if (req.kind == Dashboard::Request::unload || req.kind == Dashboard::Request::load) {
             // Unloading in place leaves part of the model's GPU memory held
@@ -876,7 +1011,7 @@ int main(int, char **) {
             // one starts from the whole pool, with model.txt saying what to load.
             std::ofstream(kChoice) << (req.kind == Dashboard::Request::load ? req.path : std::string("none")) << "\n";
             if (req.kind == Dashboard::Request::load) {
-                unlink(kArgs);  // the library's choice replaces a manual override
+                unlink(kArgs.c_str());  // the library's choice replaces a manual override
             }
             std::printf("ps5lm-app: restarting for %s\n", req.kind == Dashboard::Request::load ? req.path.c_str() : "no model");
             const bool loaded = !models.running.empty();
@@ -905,8 +1040,8 @@ int main(int, char **) {
             }
             renderer.draw(frame.overlay);
             display.present(renderer);
-            if (n % 60 == 45 && !take_request_file("/data/PS5LM/screenshot").empty()) {
-                const bool ok = save_screen("/data/PS5LM/screen.bmp", display.width(), display.height());
+            if (n % 60 == 45 && !take_request_file((kDir + "/screenshot").c_str()).empty()) {
+                const bool ok = save_screen((kDir + "/screen.bmp").c_str(), display.width(), display.height());
                 std::printf("ps5lm-app: screenshot %s\n", ok ? "saved" : "failed");
             }
         }
