@@ -113,6 +113,11 @@ static void memory_sysctls(void) {
     }
 }
 
+/* The biggest processes, for the per-process calls below. */
+static pid_t top_pids[10];
+static char  top_names[10][COMMLEN + 1];
+static int   top_count;
+
 struct proc_row {
     pid_t  pid;
     double rss, virt;
@@ -173,8 +178,86 @@ static void processes(void) {
         out("%6d %10.1f %10.1f  %s\n", rows[i].pid, rows[i].rss, rows[i].virt, rows[i].comm);
     }
     out("%zu processes, %.1f MiB resident in all\n", m, total);
+    for (size_t i = 0; i < m && top_count < 10; i++, top_count++) {
+        top_pids[top_count] = rows[i].pid;
+        memcpy(top_names[top_count], rows[i].comm, sizeof(top_names[0]));
+    }
     free(rows);
     free(buf);
+}
+
+/* Sony's "get" syscalls, numbered as in the PS4 table (elfldr's
+ * sys_budget_set is 0x23b there too). The argument shapes are guesses, so
+ * every buffer is oversized and zeroed and only nonzero qwords are printed;
+ * an error return only means the guess was wrong. Nothing here sets,
+ * creates or deletes. */
+#define SYS_BUDGET_GET             0x23a
+#define SYS_BUDGET_GETID           0x261
+#define SYS_BUDGET_GET_PTYPE       0x262
+#define SYS_GET_PROC_TYPE_INFO     0x264
+#define SYS_GET_RESIDENT_COUNT     0x265
+#define SYS_GET_RESIDENT_FMEM      0x267
+#define SYS_GET_MAP_STATISTICS     0x282
+#define SYS_GET_KERNEL_MEM_STATS   0x286
+#define SYS_BUDGET_PTYPE_OF_BUDGET 0x28a
+
+#define BUF_BYTES (64 * 1024)
+static uint64_t scratch[BUF_BYTES / 8];
+
+static void dump_nonzero(const char *what) {
+    int shown = 0;
+    for (size_t i = 0; i < BUF_BYTES / 8 && shown < 48; i++) {
+        if (scratch[i] == 0)
+            continue;
+        out("  %s +0x%04zx  0x%016llx  %llu\n", what, i * 8, (unsigned long long)scratch[i],
+            (unsigned long long)scratch[i]);
+        shown++;
+    }
+    if (shown == 0)
+        out("  %s: buffer untouched\n", what);
+}
+
+static void call_into_buffer(const char *what, int nr, long a, long b) {
+    memset(scratch, 0, sizeof(scratch));
+    errno = 0;
+    const long rc = syscall(nr, a, b);
+    out("%s = %ld (errno %d)\n", what, rc, errno);
+    if (rc >= 0)
+        dump_nonzero(what);
+}
+
+static void budgets(void) {
+    out("== budgets and kernel memory\n");
+    errno = 0;
+    const long self = syscall(SYS_BUDGET_GETID);
+    out("budget_getid (self) = %ld (errno %d)\n", self, errno);
+    for (long id = 0; id < 16; id++) {
+        errno = 0;
+        const long ptype = syscall(SYS_BUDGET_GET_PTYPE, id);
+        const int  e1 = errno;
+        errno = 0;
+        const long ptype2 = syscall(SYS_BUDGET_PTYPE_OF_BUDGET, id);
+        out("budget %2ld: get_ptype %ld (errno %d), ptype_of_budget %ld (errno %d)\n", id, ptype, e1, ptype2, errno);
+    }
+    /* Each record: u32 resource, u32 flags, u64 limit, u64 used. Only ids
+     * that answer 0 are shown. */
+    for (long id = 0; id < 4096; id++) {
+        int count = 64;
+        memset(scratch, 0, sizeof(scratch));
+        const long rc = syscall(SYS_BUDGET_GET, id, scratch, &count);
+        if (rc != 0)
+            continue;
+        out("budget %ld: %d resources\n", id, count);
+        for (int r = 0; r < count && r < 64; r++) {
+            const uint64_t *e = scratch + r * 3;
+            out("  resource %2u flags %u  limit %14llu (%9.1f MiB)  used %14llu (%9.1f MiB)\n", (unsigned)(e[0] & 0xffffffff),
+                (unsigned)(e[0] >> 32), (unsigned long long)e[1], e[1] / MiB, (unsigned long long)e[2], e[2] / MiB);
+        }
+    }
+    call_into_buffer("get_kernel_mem_statistics(buf)", SYS_GET_KERNEL_MEM_STATS, (long)scratch, 0);
+    call_into_buffer("get_kernel_mem_statistics(buf, size)", SYS_GET_KERNEL_MEM_STATS, (long)scratch, BUF_BYTES);
+    call_into_buffer("get_map_statistics(buf)", SYS_GET_MAP_STATISTICS, (long)scratch, 0);
+    call_into_buffer("get_proc_type_info(buf)", SYS_GET_PROC_TYPE_INFO, (long)scratch, 0);
 }
 
 int main(void) {
@@ -186,6 +269,7 @@ int main(void) {
     counters();
     processes();
     memory_sysctls();
+    budgets();
     out("sysmemprobe: done\n");
     if (out_file)
         fclose(out_file);
